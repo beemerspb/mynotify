@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="./assets/readme/logo.png" width="120" alt="Логотип MyNotify">
+</p>
+
+<p align="center">
   <img src="./assets/readme/hero.svg" width="100%"
        alt="MyNotify — живая камера поверх любого экрана Android, управление из Home Assistant">
 </p>
@@ -8,6 +12,9 @@
   <a href="https://github.com/beemerspb/mynotify/releases/latest"><img src="https://img.shields.io/github/v/release/beemerspb/mynotify?label=APK&color=0A84FF" alt="Скачать APK"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-30D158" alt="Лицензия MIT"></a>
 </p>
+
+Текущая версия — **0.6.9** (приложение и интеграция под одним номером,
+история в [CHANGELOG](CHANGELOG.md)).
 
 ## Простыми словами
 
