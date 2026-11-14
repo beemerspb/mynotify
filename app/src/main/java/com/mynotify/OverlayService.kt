@@ -325,8 +325,9 @@ class OverlayService : Service() {
     /** Круглая полупрозрачная кнопка-иконка для панели окна. */
     // Мигающий красный контур фокуса (видно на ТВ с пульта). Навешивается
     // как foreground — фон кнопки (пилюля/скругления) не трогает.
-    private val blinkTagId = View.generateViewId()
-
+    // ВАЖНО: аниматор хранится в замыкании, НЕ в setTag: setTag(int) требует
+    // ключ >= 0x01000000, а View.generateViewId() отдаёт значения ниже —
+    // на фокус с пульта падал с IllegalArgumentException (краш на ТВ v0.7.11).
     private fun attachFocusBlink(v: View, radiusDp: Int) {
         val ring = GradientDrawable().apply {
             setColor(Color.TRANSPARENT)
@@ -334,21 +335,22 @@ class OverlayService : Service() {
             cornerRadius = dp(radiusDp).toFloat()
         }
         ring.alpha = 0
-        v.foreground = ring
-        v.setOnFocusChangeListener { view, focused ->
+        if (Build.VERSION.SDK_INT >= 23) v.foreground = ring
+        var anim: android.animation.ObjectAnimator? = null
+        v.setOnFocusChangeListener { _, focused ->
+            anim?.cancel()
+            anim = null
+            ring.alpha = 0
             if (focused) {
-                ring.alpha = 255
-                val anim = android.animation.ObjectAnimator.ofInt(ring, "alpha", 255, 0, 255)
-                    .apply {
-                        duration = 900
-                        repeatCount = android.animation.ObjectAnimator.INFINITE
-                    }
-                view.setTag(blinkTagId, anim)
-                anim.start()
-            } else {
-                (view.getTag(blinkTagId) as? android.animation.ObjectAnimator)?.cancel()
-                view.setTag(blinkTagId, null)
-                ring.alpha = 0
+                if (Build.VERSION.SDK_INT >= 23) {
+                    ring.alpha = 255
+                    anim = android.animation.ObjectAnimator.ofInt(ring, "alpha", 255, 0, 255)
+                        .apply {
+                            duration = 900
+                            repeatCount = android.animation.ObjectAnimator.INFINITE
+                        }
+                        .also { it.start() }
+                }
             }
         }
     }

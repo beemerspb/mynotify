@@ -193,9 +193,9 @@ class MainActivity : Activity() {
 
     /** Кнопка iOS: сплошной акцент, скругление 14, medium 17sp. */
     // Мигающий красный контур фокуса (для пульта ТВ): foreground-кольцо,
-    // фон элемента не трогает.
-    private val blinkTagId = View.generateViewId()
-
+    // фон элемента не трогает. Аниматор — в замыкании, не в setTag:
+    // setTag(int) с ключом generateViewId() кидает IllegalArgumentException
+    // и ронял приложение на первом же фокусе с пульта (краш на ТВ v0.7.11).
     private fun attachFocusBlink(v: View, radiusDp: Int) {
         v.isFocusable = true
         val ring = android.graphics.drawable.GradientDrawable().apply {
@@ -204,21 +204,20 @@ class MainActivity : Activity() {
             cornerRadius = dp(radiusDp).toFloat()
         }
         ring.alpha = 0
-        v.foreground = ring
-        v.setOnFocusChangeListener { view, focused ->
-            if (focused) {
+        if (android.os.Build.VERSION.SDK_INT >= 23) v.foreground = ring
+        var anim: android.animation.ObjectAnimator? = null
+        v.setOnFocusChangeListener { _, focused ->
+            anim?.cancel()
+            anim = null
+            ring.alpha = 0
+            if (focused && android.os.Build.VERSION.SDK_INT >= 23) {
                 ring.alpha = 255
-                val anim = android.animation.ObjectAnimator.ofInt(ring, "alpha", 255, 0, 255)
+                anim = android.animation.ObjectAnimator.ofInt(ring, "alpha", 255, 0, 255)
                     .apply {
                         duration = 900
                         repeatCount = android.animation.ObjectAnimator.INFINITE
                     }
-                view.setTag(blinkTagId, anim)
-                anim.start()
-            } else {
-                (view.getTag(blinkTagId) as? android.animation.ObjectAnimator)?.cancel()
-                view.setTag(blinkTagId, null)
-                ring.alpha = 0
+                    .also { it.start() }
             }
         }
     }
