@@ -9,7 +9,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 
-from . import CONF_GO2RTC_URL, DEFAULT_GO2RTC, DOMAIN, store
+from . import CONF_GO2RTC_URL, DEFAULT_GO2RTC, DOMAIN, ensure_views, store
 
 
 class MyNotifyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -19,6 +19,8 @@ class MyNotifyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._go2rtc = DEFAULT_GO2RTC
 
     async def async_step_user(self, user_input=None):
+        # эндпоинты приложения нужны уже на шаге кода — до создания записи
+        ensure_views(self.hass)
         if user_input is not None:
             self._go2rtc = user_input[CONF_GO2RTC_URL].strip().rstrip("/")
             return await self.async_step_device()

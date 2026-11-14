@@ -144,6 +144,21 @@ class PollView(HomeAssistantView):
         return self.json({"ok": True, "bound": bound, **cmd})
 
 
+def ensure_views(hass: HomeAssistant) -> None:
+    """Регистрирует HTTP-эндпоинты приложения.
+
+    Вызывается и из async_setup, и из config flow: до появления первой
+    записи домен интеграции HA не загружает, а приложение должно иметь
+    возможность зарегистрироваться ДО создания записи (по коду).
+    """
+    st = store(hass)
+    if st.get("views"):
+        return
+    hass.http.register_view(RegisterView())
+    hass.http.register_view(PollView())
+    st["views"] = True
+
+
 def _register_services(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, "show"):
         return
@@ -172,8 +187,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     store(hass)
-    hass.http.register_view(RegisterView())
-    hass.http.register_view(PollView())
+    ensure_views(hass)
     _register_services(hass)
     return True
 

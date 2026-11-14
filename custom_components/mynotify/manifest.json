@@ -8,6 +8,6 @@
   "issue_tracker": "https://github.com/beemerspb/mynotify/issues",
   "integration_type": "device",
   "iot_class": "local_push",
-  "version": "0.6.1"
+  "version": "0.6.2"
 }
 
