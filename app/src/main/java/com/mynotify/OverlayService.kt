@@ -329,22 +329,27 @@ class OverlayService : Service() {
             setColorFilter(Color.parseColor("#FFFFFF"))
             scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
             contentDescription = desc
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#B31C1C1E"))
-                cornerRadius = dp(22).toFloat()
-            }
             isFocusable = true
             isClickable = true
-            // Жирная подсветка фокуса для пульта ДУ (ТВ): синий круг,
-            // белая обводка, увеличение — фокус видно из-за дивана
-            setOnFocusChangeListener { v, f ->
-                v.background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (f) "#FF2979FF" else "#B31C1C1E"))
-                    cornerRadius = dp(22).toFloat()
-                    if (f) setStroke(dp(3), Color.parseColor("#FFFFFFFF"))
-                }
-                v.scaleX = if (f) 1.3f else 1f
-                v.scaleY = if (f) 1.3f else 1f
+            // Фокус для пульта ДУ: классический StateListDrawable — обе
+            // состояния одна и та же скруглённая пилюля, фокус = синий
+            // цвет + белая обводка. Без замены фона на лету и масштабов.
+            background = android.graphics.drawable.StateListDrawable().apply {
+                addState(
+                    intArrayOf(android.R.attr.state_focused),
+                    GradientDrawable().apply {
+                        setColor(Color.parseColor("#FF2979FF"))
+                        cornerRadius = dp(22).toFloat()
+                        setStroke(dp(3), Color.parseColor("#FFFFFFFF"))
+                    }
+                )
+                addState(
+                    intArrayOf(),
+                    GradientDrawable().apply {
+                        setColor(Color.parseColor("#B31C1C1E"))
+                        cornerRadius = dp(22).toFloat()
+                    }
+                )
             }
             setOnClickListener { showUi(); action() }
         }

@@ -198,17 +198,22 @@ class MainActivity : Activity() {
         setTextColor(Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
         stateListAnimator = null
-        background = GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(14).toFloat()
-        }
-        // подсветка фокуса для пульта ДУ (Android TV)
-        setOnFocusChangeListener { v, f ->
-            (v.background as? GradientDrawable)?.setStroke(
-                if (f) dp(3) else 0, Color.parseColor("#FFFFFFFF")
+        background = android.graphics.drawable.StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_focused),
+                GradientDrawable().apply {
+                    setColor(color)
+                    cornerRadius = dp(14).toFloat()
+                    setStroke(dp(3), Color.parseColor("#FFFFFFFF"))
+                }
             )
-            v.scaleX = if (f) 1.04f else 1f
-            v.scaleY = if (f) 1.04f else 1f
+            addState(
+                intArrayOf(),
+                GradientDrawable().apply {
+                    setColor(color)
+                    cornerRadius = dp(14).toFloat()
+                }
+            )
         }
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(50))
