@@ -53,8 +53,10 @@ import kotlin.math.max
 class OverlayService : Service() {
 
     companion object {
+        const val ACTION_START = "com.mynotify.action.START"
         const val ACTION_SHOW = "com.mynotify.action.SHOW"
         const val ACTION_HIDE = "com.mynotify.action.HIDE"
+        const val ACTION_STOP = "com.mynotify.action.STOP"
         const val ACTION_STATE = "com.mynotify.action.STATE"
         const val EXTRA_URL = "url"
         const val EXTRA_AUTOHIDE_SEC = "autohide_sec"
@@ -62,7 +64,10 @@ class OverlayService : Service() {
             "http://homeassistant.local:1984/api/stream.m3u8?src=Cam1"
         private const val UI_TIMEOUT_MS = 6000L
 
+        /** Служба живёт в фоне (к ней подключается HA). */
         @Volatile var running = false
+        /** Окно сейчас показано (не равно «служба запущена»). */
+        @Volatile var windowShown = false
     }
 
     private lateinit var prefs: SharedPreferences
@@ -75,6 +80,8 @@ class OverlayService : Service() {
     private var retries = 0
 
     private var uiBar: LinearLayout? = null
+    private var uiButtons: List<TextView> = emptyList()
+    private var baseWindowW = 0 // ширина окна при создании — эталон масштаба кнопок
     private var cornerView: View? = null
     private val uiHideRunnable = Runnable { hideUi() }
 
@@ -92,30 +99,51 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        running = true
     }
 
+    /**
+     * Логика: служба фоновая и живёт, пока её явно не остановят
+     * (ACTION_STOP или кнопка «Остановить службу»).
+     * SHOW/HIDE только показывают и скрывают окно, на службу не влияют.
+     */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_HIDE -> { stopSelf(); return START_NOT_STICKY }
-            else -> {
-                val url = intent?.getStringExtra(EXTRA_URL)
+            ACTION_STOP -> {
+                hideWindow()
+                running = false
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_HIDE -> {
+                hideWindow()
+                startForegroundNotify("Служба работает — окно скрыто")
+                return START_STICKY
+            }
+            ACTION_SHOW -> {
+                startForegroundNotify("Камера поверх экрана")
+                val url = intent.getStringExtra(EXTRA_URL)
                     ?: prefs.getString("url", null) ?: ""
                 if (url.isBlank()) {
-                    // адрес потока обязан прийти из HA — без него работать нечего
-                    stopSelf()
-                    return START_NOT_STICKY
+                    startForegroundNotify("Нет адреса потока — отправьте камеру из HA")
+                    return START_STICKY
                 }
-                startForegroundNotify("Камера поверх экрана")
                 show(url)
-                val sec = intent?.getIntExtra(EXTRA_AUTOHIDE_SEC, 0) ?: 0
-                if (sec > 0) handler.postDelayed({ stopSelf() }, sec * 1000L)
+                val sec = intent.getIntExtra(EXTRA_AUTOHIDE_SEC, 0)
+                if (sec > 0) handler.postDelayed({ hideWindow() }, sec * 1000L)
+            }
+            else -> {
+                // запуск службы (из приложения или рестарт системой) —
+                // окно НЕ показываем, служба просто ждёт команд из HA
+                startForegroundNotify("Служба запущена — ожидание команд из HA")
             }
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onDestroy() {
         hideWindow()
+        running = false
         super.onDestroy()
     }
 
@@ -206,12 +234,13 @@ class OverlayService : Service() {
             setBackgroundColor(Color.parseColor("#66000000"))
             visibility = View.GONE
         }
-        bar.addView(toolButton("Закрыть") { stopSelf() })
+        bar.addView(toolButton("Закрыть") { hideWindow() })
         bar.addView(toolButton("Во весь экран") { toggleFullscreen() })
         bar.addView(toolButton("Скриншот") { takeScreenshot() })
         val rec = toolButton("Запись") { toggleRecord() }
         recordBtn = rec
         bar.addView(rec)
+        uiButtons = (0 until bar.childCount).mapNotNull { bar.getChildAt(it) as? TextView }
         val barLp = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
         barLp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
@@ -235,7 +264,9 @@ class OverlayService : Service() {
 
         root = container
         wm!!.addView(container, p)
-        running = true
+        baseWindowW = w
+        windowShown = true
+        applyUiScale()
         showUi() // при показе панель видна, затем скроется через 6 с
         try {
             sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
@@ -243,13 +274,14 @@ class OverlayService : Service() {
     }
 
     private fun hideWindow() {
-        running = false
+        windowShown = false
         recording = false
         handler.removeCallbacksAndMessages(null)
         try { root?.let { wm?.removeView(it) } } catch (_: Exception) {}
         root = null
         playerView = null
         uiBar = null
+        uiButtons = emptyList()
         cornerView = null
         recordBtn = null
         player?.release()
@@ -271,6 +303,23 @@ class OverlayService : Service() {
     private fun hideUi() {
         uiBar?.visibility = View.GONE
         cornerView?.visibility = View.GONE
+    }
+
+    /** Кнопки панели масштабируются вместе с размером окна. */
+    private fun applyUiScale() {
+        val w = params?.width ?: return
+        if (baseWindowW == 0) return
+        val k = (w.toFloat() / baseWindowW).coerceIn(1f, 3f)
+        for (b in uiButtons) {
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f * k)
+            b.setPadding(dpf(14f * k), dpf(8f * k), dpf(14f * k), dpf(8f * k))
+        }
+        uiBar?.setPadding(dpf(6f * k), dpf(5f * k), dpf(6f * k), dpf(5f * k))
+        cornerView?.let {
+            val lp = it.layoutParams
+            lp.width = dpf(28f * k); lp.height = dpf(28f * k)
+            it.layoutParams = lp
+        }
     }
 
     // ---------- плеер ----------
@@ -320,6 +369,7 @@ class OverlayService : Service() {
             fullscreen = false
         }
         wm?.updateViewLayout(root, p)
+        applyUiScale()
         cornerView?.visibility =
             if (hasTouch && !fullscreen && uiBar?.visibility == View.VISIBLE)
                 View.VISIBLE else View.GONE
@@ -411,7 +461,7 @@ class OverlayService : Service() {
         val p = params ?: return false
         val step = dp(24)
         when (ev.keyCode) {
-            KeyEvent.KEYCODE_BACK -> { stopSelf(); return true }
+            KeyEvent.KEYCODE_BACK -> { hideWindow(); return true }
             KeyEvent.KEYCODE_DPAD_UP -> p.y -= step
             KeyEvent.KEYCODE_DPAD_DOWN -> p.y += step
             KeyEvent.KEYCODE_DPAD_LEFT -> p.x -= step
@@ -429,6 +479,7 @@ class OverlayService : Service() {
         p.width = max(dp(160), (p.width * factor).toInt())
         p.height = (p.width * 9f / 16f).toInt()
         wm?.updateViewLayout(root, p)
+        applyUiScale()
     }
 
     /** Ресайз перетаскиванием за правый нижний угол (пропорции 16:9). */
@@ -446,6 +497,7 @@ class OverlayService : Service() {
                     p.width = nw
                     p.height = (nw * 9f / 16f).toInt()
                     wm?.updateViewLayout(root, p)
+                    applyUiScale()
                     true
                 }
                 else -> false
@@ -455,6 +507,9 @@ class OverlayService : Service() {
 
     private fun dp(v: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
+
+    private fun dpf(v: Float): Int = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics).toInt()
 
     // ---------- уведомление FGS ----------
 
