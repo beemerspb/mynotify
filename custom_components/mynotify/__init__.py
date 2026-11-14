@@ -266,9 +266,11 @@ class StreamView(HomeAssistantView):
                 if "mpegurl" in ctype or u.split("?", 1)[0].endswith(".m3u8"):
                     text = await up.text()
                     body = rewrite_manifest(text, u, device, code, base)
+                    # Content-Type без charset: ExoPlayer не распознаёт HLS,
+                    # если у MIME есть параметр "; charset=..."
                     return web.Response(
-                        text=body,
-                        content_type="application/vnd.apple.mpegurl",
+                        body=body.encode("utf-8"),
+                        headers={"Content-Type": "application/vnd.apple.mpegurl"},
                         status=up.status,
                     )
                 resp_headers = {"Accept-Ranges": "bytes"}

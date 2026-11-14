@@ -513,6 +513,7 @@ class MainActivity : Activity() {
             var msg: String
             var apkUrl = ""
             var tag = ""
+            var update = false
             try {
                 val con = java.net.URL(
                     "https://api.github.com/repos/beemerspb/mynotify/releases/latest"
@@ -536,7 +537,10 @@ class MainActivity : Activity() {
                     tag.removePrefix("v") == appVersion() ->
                         msg = "Версия ${appVersion()} — последняя"
                     apkUrl.isEmpty() -> msg = "В релизе $tag нет APK-файла"
-                    else -> msg = "Доступна версия $tag (у вас ${appVersion()})"
+                    else -> {
+                        msg = "Доступна версия $tag (у вас ${appVersion()})"
+                        update = true
+                    }
                 }
             } catch (e: Exception) {
                 msg = "Не удалось проверить: ${e.javaClass.simpleName}"
@@ -545,7 +549,7 @@ class MainActivity : Activity() {
             windowHandler.post {
                 checkingUpdate = false
                 updText.text = fin
-                if (apkUrl.isNotEmpty()) {
+                if (update) {
                     android.app.AlertDialog.Builder(this)
                         .setTitle("Обновление $tag")
                         .setMessage(fin)

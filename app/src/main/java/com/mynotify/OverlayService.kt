@@ -530,7 +530,7 @@ class OverlayService : Service() {
                 retries++
                 if (retries <= 30) handler.postDelayed({
                     try {
-                        ex.setMediaItem(MediaItem.fromUri(currentUrl()))
+                        ex.setMediaItem(mediaItem(currentUrl()))
                         ex.prepare()
                     } catch (_: Exception) {}
                 }, 2000)
@@ -542,11 +542,25 @@ class OverlayService : Service() {
                 }
             }
         })
-        ex.setMediaItem(MediaItem.fromUri(url))
+        ex.setMediaItem(mediaItem(url))
         ex.playWhenReady = true
         ex.prepare()
         retries = 0
     }
+
+    /**
+     * Для ссылок на прокси HA MIME задаётся явно: URL без расширения .m3u8,
+     * а часть плееров не верит Content-Type с charset.
+     */
+    private fun mediaItem(url: String): MediaItem =
+        MediaItem.Builder()
+            .setUri(url)
+            .setMimeType(
+                if (url.contains("/api/mynotify/stream"))
+                    "application/x-mpegURL"
+                else null
+            )
+            .build()
 
     private fun currentUrl(): String = pickUrl().ifBlank { DEFAULT_URL }
 
