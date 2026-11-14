@@ -16,7 +16,7 @@ show:
           multiple: true
     stream:
       name: "Камера"
-      description: "Имя потока go2rtc или полный URL."
+      description: "Имя потока go2rtc (см. список «Камера» устройства) или полный URL. Показанная камера становится выбранной."
       required: true
       selector:
         text:

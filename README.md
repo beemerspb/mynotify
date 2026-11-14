@@ -10,7 +10,7 @@ Android TV) показывает плавающее окно с живым по�
 [![добавить в Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=beemerspb&repository=mynotify&category=integration)
 [![APK](https://img.shields.io/github/v/release/beemerspb/mynotify?label=APK&color=blue)](https://github.com/beemerspb/mynotify/releases/latest)
 
-Текущая версия: **0.6.5** — приложение и интеграция одним номером,
+Текущая версия: **0.6.6** — приложение и интеграция одним номером,
 история в [CHANGELOG](CHANGELOG.md).
 
 ## Что получаешь в Home Assistant

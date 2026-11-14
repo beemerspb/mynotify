@@ -71,6 +71,21 @@ class Device:
         self.device_id = coord.device_id
         self.on = False
         self.stream: str | None = (entry.options or {}).get(OPT_STREAM)
+        self._watchers: list = []
+
+    def watch(self, cb) -> None:
+        self._watchers.append(cb)
+
+    def unwatch(self, cb) -> None:
+        if cb in self._watchers:
+            self._watchers.remove(cb)
+
+    def notify(self) -> None:
+        for cb in list(self._watchers):
+            try:
+                cb()
+            except Exception:  # noqa: BLE001
+                pass
 
     def current_stream(self) -> str | None:
         if self.stream in self.coord.streams or not self.coord.streams:
@@ -82,13 +97,17 @@ class Device:
         if not s:
             _LOGGER.warning("mynotify: нет ни одной камеры go2rtc для показа")
             return
-        self.stream = s
+        if stream:
+            # показ конкретной камеры (сервис/автоматизация) — запоминаем её
+            # как выбранную, чтобы список «Камера» в UI показывал правду
+            self.set_stream(s)
         send_command(
             self.hass,
             self.device_id,
             {"cmd": "show", "url": build_url(self.hass, s), "autohide": autohide},
         )
         self.on = True
+        self.notify()
 
     async def hide(self) -> None:
         send_command(self.hass, self.device_id, {"cmd": "hide"})
@@ -99,6 +118,7 @@ class Device:
         self.hass.config_entries.async_update_entry(
             self.entry, options={**(self.entry.options or {}), OPT_STREAM: stream}
         )
+        self.notify()
 
     def cmd(self, name: str) -> None:
         send_command(self.hass, self.device_id, {"cmd": name})
@@ -144,3 +164,10 @@ class MyNotifyEntity(CoordinatorEntity):
     @property
     def available(self) -> bool:
         return self.coordinator.online and self.coordinator.last_update_success
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._dev.watch(self.async_write_ha_state)
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._dev.unwatch(self.async_write_ha_state)
