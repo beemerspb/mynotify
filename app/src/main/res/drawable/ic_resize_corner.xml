@@ -1,0 +1,7 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp" android:height="16dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- маленький треугольник-маркер ресайза, привязан к левому нижнему углу -->
+    <path android:fillColor="#99FFFFFF"
+        android:pathData="M0,24 L0,8 L16,24 Z"/>
+</vector>

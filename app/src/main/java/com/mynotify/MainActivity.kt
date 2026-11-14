@@ -470,9 +470,9 @@ class MainActivity : Activity() {
                            else "Выключен — окно открывается со звуком"
         }
         val mutePrefs = getSharedPreferences("settings", MODE_PRIVATE)
-        muteLabel(mutePrefs.getBoolean("mute_on_start", false))
+        muteLabel(mutePrefs.getBoolean("mute_on_start", true))
         muteVal.setOnClickListener {
-            val nv = !mutePrefs.getBoolean("mute_on_start", false)
+            val nv = !mutePrefs.getBoolean("mute_on_start", true)
             mutePrefs.edit().putBoolean("mute_on_start", nv).apply()
             muteLabel(nv)
         }

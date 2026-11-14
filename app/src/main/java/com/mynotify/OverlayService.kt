@@ -89,7 +89,7 @@ class OverlayService : Service() {
     private var volBtn: ImageButton? = null
     @Volatile private var muted = false
     private var baseWindowW = 0 // ширина окна при создании — эталон масштаба кнопок
-    private var cornerView: View? = null
+    private var cornerViews: List<View> = emptyList()
     private val uiHideRunnable = Runnable { hideUi() }
 
     private var fullscreen = false
@@ -332,6 +332,15 @@ class OverlayService : Service() {
             }
             isFocusable = !hasTouch
             isClickable = true
+            // подсветка фокуса для пульта ДУ (Android TV)
+            setOnFocusChangeListener { v, f ->
+                v.background = GradientDrawable().apply {
+                    setColor(Color.parseColor(if (f) "#E60A84FF" else "#B31C1C1E"))
+                    cornerRadius = dp(22).toFloat()
+                }
+                v.scaleX = if (f) 1.15f else 1f
+                v.scaleY = if (f) 1.15f else 1f
+            }
             setOnClickListener { showUi(); action() }
         }
 
@@ -363,9 +372,10 @@ class OverlayService : Service() {
             setBackgroundColor(Color.parseColor("#CC000000"))
             setOnKey { ev -> handleKey(ev) }
             if (hasTouch) {
-                // правый нижний угол зарезервирован под ручку ресайза
+                // углы с треугольничками ресайза зарезервированы от перетаскивания
                 setInterceptSkip { x, y ->
-                    x > width - dp(64) && y > height - dp(64)
+                    (x < dp(56) && y > height - dp(56)) ||
+                        (x > width - dp(56) && y < dp(56))
                 }
                 val origin = IntArray(2)
                 setOnDrag(
@@ -421,19 +431,25 @@ class OverlayService : Service() {
         container.addView(bar, barLp)
         uiBar = bar
 
-        // ручка ресайза за правый нижний угол
-        val corner = View(this).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#66FFFFFF"))
-                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, dp(10).toFloat(), dp(10).toFloat())
-            }
-            visibility = View.GONE
+        // ручки ресайза: маленькие треугольнички в левом нижнем и правом
+        // верхнем углах (маркеры тянутся за сам угол)
+        fun mkCorner(gravity: Int, rot: Float): View {
+            val v = View(this)
+            v.background = resources.getDrawable(R.drawable.ic_resize_corner, null).mutate()
+            v.rotation = rot
+            v.visibility = View.GONE
+            val lp = FrameLayout.LayoutParams(dp(16), dp(16))
+            lp.gravity = gravity
+            container.addView(v, lp)
+            return v
         }
-        val cLp = FrameLayout.LayoutParams(dp(28), dp(28))
-        cLp.gravity = Gravity.BOTTOM or Gravity.END
-        container.addView(corner, cLp)
-        if (hasTouch) attachResize(corner)
-        cornerView = corner
+        val cBL = mkCorner(Gravity.BOTTOM or Gravity.START, 0f)
+        val cTR = mkCorner(Gravity.TOP or Gravity.END, 180f)
+        if (hasTouch) {
+            attachResize(cBL, flip = true)   // левый нижний: тянем влево — шире
+            attachResize(cTR, flip = false)  // правый верхний: тянем вправо — шире
+        }
+        cornerViews = listOf(cBL, cTR)
 
         root = container
         wm!!.addView(container, p)
@@ -456,7 +472,7 @@ class OverlayService : Service() {
         uiBar = null
         uiIcons = emptyList()
         fsBtn = null
-        cornerView = null
+        cornerViews = emptyList()
         player?.release()
         player = null
         try {
@@ -466,16 +482,21 @@ class OverlayService : Service() {
 
     // ---------- UI по тапу, автоскрытие 6 с ----------
 
+    private fun setCornersVisible(v: Int) {
+        cornerViews.forEach { it.visibility = v }
+    }
+
     private fun showUi() {
         uiBar?.visibility = View.VISIBLE
-        cornerView?.visibility = if (hasTouch && !fullscreen) View.VISIBLE else View.GONE
+        setCornersVisible(if (hasTouch && !fullscreen) View.VISIBLE else View.GONE)
+        if (!hasTouch && uiBar?.hasFocus() != true) uiIcons.firstOrNull()?.requestFocus()
         handler.removeCallbacks(uiHideRunnable)
         handler.postDelayed(uiHideRunnable, UI_TIMEOUT_MS)
     }
 
     private fun hideUi() {
         uiBar?.visibility = View.GONE
-        cornerView?.visibility = View.GONE
+        setCornersVisible(View.GONE)
     }
 
     /**
@@ -511,9 +532,9 @@ class OverlayService : Service() {
             lp.marginStart = gap
             uiBar!!.getChildAt(i).layoutParams = lp
         }
-        cornerView?.let {
+        cornerViews.forEach {
             val lp = it.layoutParams
-            lp.width = dpf(28f * k); lp.height = dpf(28f * k)
+            lp.width = dpf(16f * k); lp.height = dpf(16f * k)
             it.layoutParams = lp
         }
     }
@@ -527,7 +548,7 @@ class OverlayService : Service() {
         playerView?.player = ex
         // «Mute при старте» из настроек: окно может открываться без звука,
         // включается иконкой динамика в панели окна
-        muted = prefs.getBoolean("mute_on_start", false)
+        muted = prefs.getBoolean("mute_on_start", true)
         ex.volume = if (muted) 0f else 1f
         handler.post {
             volBtn?.setImageResource(
@@ -611,24 +632,39 @@ class OverlayService : Service() {
         )
         wm?.updateViewLayout(root, p)
         applyUiScale()
-        cornerView?.visibility =
+        setCornersVisible(
             if (hasTouch && !fullscreen && uiBar?.visibility == View.VISIBLE)
                 View.VISIBLE else View.GONE
+        )
     }
 
     // ---------- управление ----------
 
     private fun handleKey(ev: KeyEvent): Boolean {
         if (ev.action != KeyEvent.ACTION_DOWN) return false
+        val barWasVisible = uiBar?.visibility == View.VISIBLE
+        val barHasFocus = uiBar?.hasFocus() == true
         showUi() // любая кнопка пульта показывает панель
         val p = params ?: return false
         val step = dp(24)
         when (ev.keyCode) {
             KeyEvent.KEYCODE_BACK -> { hideWindow(); return true }
-            KeyEvent.KEYCODE_DPAD_UP -> p.y -= step
-            KeyEvent.KEYCODE_DPAD_DOWN -> p.y += step
-            KeyEvent.KEYCODE_DPAD_LEFT -> p.x -= step
-            KeyEvent.KEYCODE_DPAD_RIGHT -> p.x += step
+            // ОК: панель скрыта — показать и фокус на первую кнопку;
+            // панель видна — «нажать» сфокусированную кнопку (не перехватываем)
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER -> return !barWasVisible
+            // стрелки: при видимой панели с фокусом — навигация по кнопкам
+            // (системный focus-search), иначе — перемещение окна
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (barWasVisible && barHasFocus) return false
+                when (ev.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_UP -> p.y -= step
+                    KeyEvent.KEYCODE_DPAD_DOWN -> p.y += step
+                    KeyEvent.KEYCODE_DPAD_LEFT -> p.x -= step
+                    else -> p.x += step
+                }
+            }
             KeyEvent.KEYCODE_PLUS, KeyEvent.KEYCODE_EQUALS -> resize(1.15f)
             KeyEvent.KEYCODE_MINUS -> resize(1f / 1.15f)
             else -> return false
@@ -645,8 +681,11 @@ class OverlayService : Service() {
         applyUiScale()
     }
 
-    /** Ресайз перетаскиванием за правый нижний угол (пропорции 16:9). */
-    private fun attachResize(v: View) {
+    /**
+     * Ресайз перетаскиванием за треугольник в углу (пропорции 16:9).
+     * flip=true — ручка слева (тянем влево, окно шире).
+     */
+    private fun attachResize(v: View, flip: Boolean) {
         var sx = 0f
         var startW = 0
         v.setOnTouchListener { _, e ->
@@ -655,8 +694,8 @@ class OverlayService : Service() {
                 MotionEvent.ACTION_DOWN -> { sx = e.rawX; startW = p.width; true }
                 MotionEvent.ACTION_MOVE -> {
                     val maxW = resources.displayMetrics.widthPixels
-                    val nw = (startW + (e.rawX - sx)).toInt()
-                        .coerceIn(dp(160), maxW)
+                    val d = if (flip) sx - e.rawX else e.rawX - sx
+                    val nw = (startW + d).toInt().coerceIn(dp(160), maxW)
                     p.width = nw
                     p.height = (nw * 9f / 16f).toInt()
                     wm?.updateViewLayout(root, p)
