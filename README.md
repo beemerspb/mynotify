@@ -10,7 +10,7 @@ Android TV) показывает плавающее окно с живым по�
 [![добавить в Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=beemerspb&repository=mynotify&category=integration)
 [![APK](https://img.shields.io/github/v/release/beemerspb/mynotify?label=APK&color=blue)](https://github.com/beemerspb/mynotify/releases/latest)
 
-Текущая версия: **0.6.6** — приложение и интеграция одним номером,
+Текущая версия: **0.6.8** — приложение и интеграция одним номером,
 история в [CHANGELOG](CHANGELOG.md).
 
 ## Что получаешь в Home Assistant
@@ -66,7 +66,7 @@ Android TV) показывает плавающее окно с живым по�
 action: mynotify.show
 data:
   target:
-    entity_id: switch.mynotify_<устройство>_pokaz_okna
+    entity_id: switch.mynotify_<устройство>_push
   stream: Cam4        # имя потока go2rtc или полный http(s)-URL
   autohide: 30        # секунд; 0 — не скрывать
 ```

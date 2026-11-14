@@ -264,18 +264,18 @@ class OverlayService : Service() {
         startStream(url)
     }
 
-    /** Тёмная текстовая кнопка (без эмодзи) для полупрозрачной панели. */
+    /** iOS-капсула для полупрозрачной панели окна. */
     private fun toolButton(label: String, action: () -> Unit): TextView =
         TextView(this).apply {
             text = label
-            setTextColor(Color.parseColor("#E6E6E6"))
+            setTextColor(Color.parseColor("#FFFFFF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setTypeface(Typeface.DEFAULT)
+            setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL))
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+            setPadding(dp(16), dp(8), dp(16), dp(8))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#CC2B2B2B"))
-                cornerRadius = dp(6).toFloat()
+                setColor(Color.parseColor("#B31C1C1E"))
+                cornerRadius = dp(17).toFloat()
             }
             isFocusable = !hasTouch
             isClickable = true
@@ -337,8 +337,8 @@ class OverlayService : Service() {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(6), dp(5), dp(6), dp(5))
-            setBackgroundColor(Color.parseColor("#66000000"))
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setBackgroundColor(Color.parseColor("#4D000000"))
             visibility = View.GONE
         }
         bar.addView(toolButton("Закрыть") { hideWindow() })
@@ -512,7 +512,7 @@ class OverlayService : Service() {
             return
         }
         recording = true
-        recordBtn?.apply { text = "Стоп"; setTextColor(Color.parseColor("#FF6B6B")) }
+        recordBtn?.apply { text = "Стоп"; setTextColor(Color.parseColor("#FF453A")) }
         val f = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "rec_${stamp()}.mp4")
         val t = Thread {
             var err: String? = null
@@ -537,7 +537,7 @@ class OverlayService : Service() {
             handler.post {
                 recording = false
                 recordBtn?.apply {
-                    text = "Запись"; setTextColor(Color.parseColor("#E6E6E6"))
+                    text = "Запись"; setTextColor(Color.parseColor("#FFFFFF"))
                 }
                 startForegroundNotify(
                     if (err != null) "Запись прервана: $err"

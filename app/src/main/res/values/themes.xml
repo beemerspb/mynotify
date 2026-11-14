@@ -1,3 +1,12 @@
 <resources>
-    <style name="Theme.CamOverlay" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.CamOverlay" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ios_bg</item>
+        <item name="android:statusBarColor">@color/ios_bg</item>
+        <item name="android:navigationBarColor">@color/ios_bg</item>
+        <item name="android:colorBackground">@color/ios_bg</item>
+        <item name="android:textColorPrimary">@color/ios_label</item>
+        <item name="android:textColorSecondary">@color/ios_secondary</item>
+        <item name="android:editTextColor">@color/ios_label</item>
+        <item name="android:textColorHint">@color/ios_secondary</item>
+    </style>
 </resources>

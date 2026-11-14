@@ -5,6 +5,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import slugify
 
 from . import store
 from .device import MyNotifyEntity, async_setup_device
@@ -21,7 +22,9 @@ class OverlaySwitch(MyNotifyEntity, RestoreEntity, SwitchEntity):
     """on — показать окно с выбранной камерой, off — скрыть."""
 
     def __init__(self, dev) -> None:
-        super().__init__(dev, "ovl", "Показ окна", "mdi:cctv")
+        super().__init__(dev, "push", "Показ окна", "mdi:cctv")
+        # стабильный короткий entity_id: switch.mynotify_<устройство>_push
+        self._attr_suggested_object_id = f"{slugify(dev.entry.title)}_push"
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()

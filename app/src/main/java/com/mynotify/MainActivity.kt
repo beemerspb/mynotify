@@ -1,7 +1,6 @@
 package com.mynotify
 
 import android.app.Activity
-import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -9,6 +8,7 @@ import android.content.IntentFilter
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -25,10 +25,9 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 
 /**
- * Экран-мониторинг. Две независимые пары действий:
- *  — «Запустить/Остановить службу»: служба живёт в фоне, к ней подключается HA;
- *  — «Показать/Скрыть окно»: только окно, на работу службы не влияет.
- * Камеру и трансляцию выбирают в Home Assistant (интеграция MyNotify).
+ * Экран-мониторинг в стиле iOS: сгруппированные карточки на системном сером
+ * фоне, крупные заголовки, акцентные цвета системы. Две независимые пары
+ * действий: служба (фон, для HA) и окно (показ/скрытие). Камеру выбирают в HA.
  */
 class MainActivity : Activity() {
 
@@ -40,6 +39,14 @@ class MainActivity : Activity() {
     private lateinit var stopBtn: Button
     private lateinit var windowBtn: Button
     private var permBtn: Button? = null
+
+    private val cLabel get() = ContextCompat.getColor(this, R.color.ios_label)
+    private val cSecondary get() = ContextCompat.getColor(this, R.color.ios_secondary)
+    private val cBlue get() = ContextCompat.getColor(this, R.color.ios_blue)
+    private val cGreen get() = ContextCompat.getColor(this, R.color.ios_green)
+    private val cRed get() = ContextCompat.getColor(this, R.color.ios_red)
+    private val cOrange get() = ContextCompat.getColor(this, R.color.ios_orange)
+    private val cGray get() = ContextCompat.getColor(this, R.color.ios_gray)
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) = updateStatus()
@@ -120,106 +127,186 @@ class MainActivity : Activity() {
         val shown = OverlayService.windowShown
         val haOk = OverlayService.lastHaOk > 0 &&
             System.currentTimeMillis() - OverlayService.lastHaOk < 10000
-        statusDot.text = when {
-            running && haOk && OverlayService.bound -> "●"
-            running && haOk -> "◐"
-            running -> "○"
-            else -> " "
-        }
+        statusDot.text = "●"
         statusDot.setTextColor(
             when {
-                running && haOk && OverlayService.bound -> Color.parseColor("#4CAF50")
-                running && haOk -> Color.parseColor("#FFC107")
-                else -> Color.parseColor("#9E9E9E")
+                running && haOk && OverlayService.bound -> cGreen
+                running && haOk -> cOrange
+                running -> cGray
+                else -> cGray
             })
-        codeText.text = "Код привязки: ${pairCode()}"
+        codeText.text = pairCode()
         statusText.text = when {
-            !running -> "Служба остановлена — нажмите «Запустить службу»"
-            !haOk -> "Служба запущена, нет связи с HA — проверьте адрес HA ниже"
-            !OverlayService.bound ->
-                "Введите код на карточке интеграции MyNotify в HA"
-            shown -> "Подключено к HA — окно показано"
-            else -> "Подключено к HA — окно скрыто"
+            !running -> "Служба остановлена"
+            !haOk -> "Нет связи с Home Assistant"
+            !OverlayService.bound -> "Служба в сети, устройство не привязано"
+            shown -> "Подключено · окно показано"
+            else -> "Подключено · окно скрыто"
         }
-        launchBtn.backgroundTintList = ColorStateList.valueOf(
-            if (running) Color.parseColor("#4CAF50") else Color.parseColor("#2196F3"))
         launchBtn.isEnabled = !running
+        launchBtn.alpha = if (running) 0.35f else 1f
         stopBtn.isEnabled = running
+        stopBtn.alpha = if (running) 1f else 0.35f
         windowBtn.isEnabled = running
+        windowBtn.alpha = if (running) 1f else 0.35f
         windowBtn.text = if (shown) "Скрыть окно" else "Показать окно"
         if (hasOverlayPermission()) // выдано — больше не показываем
             permBtn?.let { (it.parent as? ViewGroup)?.removeView(it) }
     }
 
-    private fun niceButton(text: String): Button = Button(this).apply {
-        this.text = text
-        setTypeface(typeface, Typeface.BOLD)
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        setAllCaps(false)
-        val lp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        lp.topMargin = dp(10)
-        layoutParams = lp
-    }
+    // ---------- iOS-строители ----------
 
     private fun dp(v: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
+    /** Заголовок-лист: серый капс поверх секции (iOS grouped table header). */
+    private fun sectionLabel(text: String): TextView = TextView(this).apply {
+        this.text = text.uppercase()
+        setTextColor(cSecondary)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        letterSpacing = 0.06f
+        setTypeface(Typeface.DEFAULT_BOLD)
+        setPadding(dp(20), dp(22), dp(20), dp(6))
+    }
+
+    /** Белая скруглённая карточка-секция. */
+    private fun card(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(18), dp(16), dp(18), dp(16))
+        background = GradientDrawable().apply {
+            setColor(ContextCompat.getColor(this@MainActivity, R.color.ios_card))
+            cornerRadius = dp(16).toFloat()
+        }
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.leftMargin = dp(16); lp.rightMargin = dp(16)
+        layoutParams = lp
+    }
+
+    /** Кнопка iOS: сплошной акцент, скругление 14, medium 17sp. */
+    private fun iosButton(text: String, color: Int): Button = Button(this).apply {
+        this.text = text
+        isAllCaps = false
+        setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL))
+        setTextColor(Color.WHITE)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        stateListAnimator = null
+        background = GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(14).toFloat()
+        }
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(50))
+        lp.topMargin = dp(10)
+        layoutParams = lp
+    }
+
+    private fun footer(text: String): TextView = TextView(this).apply {
+        this.text = text
+        setTextColor(cSecondary)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        gravity = Gravity.CENTER
+        setPadding(dp(28), dp(14), dp(28), dp(24))
+    }
+
     private fun buildUi() {
-        val pad = dp(16)
         val lay = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.ios_bg))
+            setPadding(0, dp(28), 0, dp(12))
         }
 
-        val header = LinearLayout(this).apply {
+        // Large title
+        lay.addView(TextView(this).apply {
+            text = "MyNotify"
+            setTextColor(cLabel)
+            setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 32f)
+            letterSpacing = -0.02f
+            setPadding(dp(20), 0, dp(20), dp(2))
+        })
+        lay.addView(TextView(this).apply {
+            text = "Камера Home Assistant поверх любого приложения"
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setPadding(dp(20), 0, dp(20), 0)
+        })
+
+        // --- Секция «Состояние» ---
+        lay.addView(sectionLabel("Состояние"))
+        val statusCard = card()
+        val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         statusDot = TextView(this).apply {
-            text = "○"
-            setTextColor(Color.parseColor("#9E9E9E"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
+            text = "●"
+            setTextColor(cGray)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setPadding(0, 0, dp(10), 0)
         }
         statusText = TextView(this).apply {
-            text = "Служба остановлена — нажмите «Запустить службу»"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            text = "Служба остановлена"
+            setTextColor(cLabel)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
         }
-        header.addView(statusDot)
-        header.addView(statusText)
-        lay.addView(header)
-
-        codeText = TextView(this).apply {
-            setTextColor(Color.parseColor("#2196F3"))
-            setTypeface(Typeface.DEFAULT_BOLD)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
-            gravity = Gravity.CENTER
-            setPadding(0, dp(14), 0, dp(4))
-            text = "Код привязки: ——-———"
-        }
-        lay.addView(codeText)
-        lay.addView(TextView(this).apply {
-            setTextColor(Color.parseColor("#888888"))
-            gravity = Gravity.CENTER
-            text = "Введите этот код при добавлении устройства в интеграции MyNotify"
+        statusRow.addView(statusDot)
+        statusRow.addView(statusText)
+        statusCard.addView(statusRow)
+        statusCard.addView(TextView(this).apply {
+            text = "Управление камерой и показом — в Home Assistant"
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(0, dp(6), 0, 0)
         })
+        lay.addView(statusCard)
 
+        // --- Секция «Привязка» ---
+        lay.addView(sectionLabel("Привязка к Home Assistant"))
+        val pairCard = card()
+        pairCard.addView(TextView(this).apply {
+            text = "КОД ПРИВЯЗКИ"
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            letterSpacing = 0.08f
+            gravity = Gravity.CENTER
+        })
+        codeText = TextView(this).apply {
+            text = "––– –––"
+            setTextColor(cBlue)
+            setTypeface(Typeface.create("monospace", Typeface.BOLD))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(2))
+            letterSpacing = 0.08f
+        }
+        pairCard.addView(codeText)
+        pairCard.addView(TextView(this).apply {
+            text = "Введите этот код при добавлении устройства\nв интеграции MyNotify"
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            gravity = Gravity.CENTER
+        })
         urlInput = EditText(this).apply {
             setText(getSharedPreferences("settings", MODE_PRIVATE)
                 .getString("ha_url", "http://homeassistant.local:8123"))
             hint = "Адрес Home Assistant"
             setSingleLine()
-            setTextColor(Color.parseColor("#222222"))
+            setTextColor(cLabel)
+            setHintTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            background = GradientDrawable().apply {
+                setColor(ContextCompat.getColor(this@MainActivity, R.color.ios_field))
+                cornerRadius = dp(12).toFloat()
+            }
+            setPadding(dp(14), dp(12), dp(14), dp(12))
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            lp.topMargin = dp(12)
+            lp.topMargin = dp(14)
             layoutParams = lp
         }
-        lay.addView(urlInput)
-        lay.addView(niceButton("Сохранить адрес HA").apply {
-            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#607D8B"))
+        pairCard.addView(urlInput)
+        pairCard.addView(iosButton("Сохранить адрес", cGray).apply {
             setOnClickListener {
                 getSharedPreferences("settings", MODE_PRIVATE).edit()
                     .putString("ha_url", urlInput.text.toString().trim().trimEnd('/'))
@@ -227,10 +314,8 @@ class MainActivity : Activity() {
                 Toast.makeText(this@MainActivity, "Адрес сохранён", Toast.LENGTH_SHORT).show()
             }
         })
-
         if (!hasOverlayPermission()) {
-            permBtn = niceButton("Выдать разрешение «Поверх приложений»").apply {
-                backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF9800"))
+            permBtn = iosButton("Разрешить показ поверх приложений", cOrange).apply {
                 setOnClickListener {
                     startActivity(
                         Intent(
@@ -240,11 +325,14 @@ class MainActivity : Activity() {
                     )
                 }
             }
-            lay.addView(permBtn)
+            pairCard.addView(permBtn)
         }
+        lay.addView(pairCard)
 
-        launchBtn = niceButton("▶  Запустить службу").apply {
-            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#2196F3"))
+        // --- Секция «Служба» ---
+        lay.addView(sectionLabel("Фоновая служба"))
+        val svcCard = card()
+        launchBtn = iosButton("Запустить службу", cGreen).apply {
             setOnClickListener {
                 if (!hasOverlayPermission()) {
                     Toast.makeText(
@@ -257,19 +345,27 @@ class MainActivity : Activity() {
                 updateStatus()
             }
         }
-        lay.addView(launchBtn)
-
-        stopBtn = niceButton("■  Остановить службу").apply {
-            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#F44336"))
+        svcCard.addView(launchBtn)
+        stopBtn = iosButton("Остановить службу", cRed).apply {
             setOnClickListener {
                 sendToService(OverlayService.ACTION_STOP)
                 updateStatus()
             }
         }
-        lay.addView(stopBtn)
+        svcCard.addView(stopBtn)
+        svcCard.addView(TextView(this).apply {
+            text = "Служба сама подключается к Home Assistant и ждёт команды — " +
+                "там выбирается камера и показ окна. ADB не нужен."
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(0, dp(10), 0, 0)
+        })
+        lay.addView(svcCard)
 
-        windowBtn = niceButton("Показать окно").apply {
-            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#3F51B5"))
+        // --- Секция «Окно» ---
+        lay.addView(sectionLabel("Окно камеры"))
+        val winCard = card()
+        windowBtn = iosButton("Показать окно", cBlue).apply {
             setOnClickListener {
                 if (!OverlayService.running) {
                     Toast.makeText(
@@ -285,16 +381,16 @@ class MainActivity : Activity() {
                 windowHandler.postDelayed({ updateStatus() }, 400)
             }
         }
-        lay.addView(windowBtn)
+        windowBtn.layoutParams = (windowBtn.layoutParams as LinearLayout.LayoutParams)
+            .apply { topMargin = 0 }
+        winCard.addView(windowBtn)
+        lay.addView(winCard)
 
-        lay.addView(TextView(this).apply {
-            setTextColor(Color.parseColor("#888888"))
-            text = "Служба сама подключается к Home Assistant и ждёт команды: " +
-                "там выбирается камера и показ окна. ADB не нужен."
-        })
+        lay.addView(footer("MyNotify · Home Assistant"))
 
         setContentView(
             ScrollView(this).apply {
+                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.ios_bg))
                 addView(
                     lay,
                     ViewGroup.LayoutParams(
