@@ -175,9 +175,15 @@ class RegisterView(HomeAssistantView):
         code = str(data.get("code", ""))
         device_id = str(data.get("device_id", ""))
         name = str(data.get("name", "Android"))
+        ver = str(data.get("ver", ""))
         if len(code) != 6 or not device_id:
             return self.json({"ok": False, "error": "bad_request"})
         st = store(hass)
+        # версия приложения на устройстве — меняться редко, логируем смену
+        app_ver = st.setdefault("app_ver", {})
+        if ver and app_ver.get(device_id) != ver:
+            _LOGGER.info("mynotify: устройство %s, приложение v%s", name, ver)
+        app_ver[device_id] = ver
         now = time.time()
         # чистим протухшие незакрытые заявки (сутки)
         for k in [k for k, v in st["pending"].items() if now - v["ts"] > 86400]:
