@@ -222,6 +222,39 @@ class MainActivity : Activity() {
         }
     }
 
+    // На Android TV у Settings нет страницы ACTION_MANAGE_OVERLAY_PERMISSION —
+    // прямой startActivity кидал ActivityNotFoundException и ронял приложение.
+    // Цепочка запасных экранов, а если их нет — подсказка с adb-командой.
+    private fun openOverlayPermission() {
+        val pkg = Uri.parse("package:$packageName")
+        val attempts = listOf(
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, pkg),
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg),
+            Intent(Settings.ACTION_SETTINGS)
+        )
+        for (i in attempts) {
+            try {
+                startActivity(i)
+                return
+            } catch (_: Exception) {
+            }
+        }
+        val cmd = "adb shell appops set $packageName SYSTEM_ALERT_WINDOW allow"
+        try {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("adb", cmd))
+            Toast.makeText(
+                this,
+                "Нет страницы разрешения (ТВ). Команда adb скопирована в буфер:\n$cmd",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, "Нет страницы разрешения (ТВ). Выполните: $cmd",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun iosButton(text: String, color: Int): Button = Button(this).apply {
         this.text = text
         isAllCaps = false
@@ -352,6 +385,11 @@ class MainActivity : Activity() {
                 cornerRadius = dp(12).toFloat()
             }
             setPadding(dp(14), dp(12), dp(14), dp(12))
+            // ТВ: поле должно брать фокус и с пульта, и в touch-режиме,
+            // плюс мигающий красный контур как у кнопок
+            isFocusable = true
+            isFocusableInTouchMode = true
+            attachFocusBlink(this, 12)
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             lp.topMargin = dp(14)
@@ -371,6 +409,9 @@ class MainActivity : Activity() {
                 cornerRadius = dp(12).toFloat()
             }
             setPadding(dp(14), dp(12), dp(14), dp(12))
+            isFocusable = true
+            isFocusableInTouchMode = true
+            attachFocusBlink(this, 12)
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             lp.topMargin = dp(8)
@@ -396,14 +437,7 @@ class MainActivity : Activity() {
         })
         if (!hasOverlayPermission()) {
             permBtn = iosButton("Разрешить показ поверх приложений", cOrange).apply {
-                setOnClickListener {
-                    startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:$packageName")
-                        )
-                    )
-                }
+                setOnClickListener { openOverlayPermission() }
             }
             pairCard.addView(permBtn)
         }
@@ -675,7 +709,11 @@ class MainActivity : Activity() {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    startActivity(pi)
+                    try {
+                        startActivity(pi)
+                    } catch (e: Exception) {
+                        updText.text = "Установщик недоступен: ${e.javaClass.simpleName}"
+                    }
                 }
             } catch (e: Exception) {
                 windowHandler.post {
