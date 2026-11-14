@@ -41,25 +41,5 @@
   указать адрес go2rtc). На 2026.11+ интеграция открывается сама сразу
   после установки.
 
-### Вариант 2 — вручную
 
-Скопировать `custom_components/mynotify/` в `/config/custom_components/mynotify/`
-на хосте HA и перезапустить Home Assistant.
 
-## Установка приложения
-
-APK: релизы репозитория или сборка из исходников
-(`ANDROID_HOME=~/android-sdk gradle assembleDebug`).
-Поставить на устройство, открыть, выдать разрешение «Поверх приложений».
-
-## Структура
-
-- `app/` — Android-приложение (Kotlin, media3/ExoPlayer, minSdk 21)
-- `custom_components/mynotify/` — HA-интеграция (ставится в custom_components)
-- `deploy/ha-integration.md` — примеры автоматизаций и заметки
-- `deploy.sh` — раскатка интеграции на мой HA-хост по ssh
-
-## Версионирование
-
-Любое изменение = bump версии: `versionCode`/`versionName` в
-app/build.gradle.kts и `version` в custom_components/mynotify/manifest.json.
