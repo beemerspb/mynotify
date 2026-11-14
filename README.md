@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%"
+  <img src="./assets/readme/hero.png" width="100%"
        alt="MyNotify — живая камера поверх любого экрана Android, управление из Home Assistant">
 </p>
 
@@ -33,7 +33,7 @@
 ## Как это работает
 
 <p align="center">
-  <img src="./assets/readme/how-it-works.svg" width="100%"
+  <img src="./assets/readme/how-it-works.png" width="100%"
        alt="Схема: камеры отдают RTSP в go2rtc; Home Assistant шлёт устройству команды по HTTP; окно на устройстве забирает HLS-видео из go2rtc">
 </p>
 
@@ -46,7 +46,7 @@
 ## Установка
 
 <p align="center">
-  <img src="./assets/readme/setup.svg" width="100%"
+  <img src="./assets/readme/setup.png" width="100%"
        alt="Три шага: установить APK и запустить службу; добавить интеграцию и ввести код; пользоваться карточкой устройства">
 </p>
 
@@ -74,7 +74,7 @@
 ## Что появляется в Home Assistant
 
 <p align="center">
-  <img src="./assets/readme/entities.svg" width="100%"
+  <img src="./assets/readme/entities.png" width="100%"
        alt="Карточка устройства: выключатель окна, список камер, кнопки скриншот/во весь экран/запись; сервисы mynotify.show и mynotify.hide">
 </p>
 

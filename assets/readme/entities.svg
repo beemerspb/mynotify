@@ -15,25 +15,25 @@
       <rect x="480" y="132" width="148" height="38" rx="12" fill="#2C2C2E"/>
       <text x="554" y="157" text-anchor="middle" font-size="19" fill="#98989F">Cam4 ⌄</text>
       <text x="28" y="204" font-size="21" fill="#F5F5F7">Команды окну</text>
-      <g transform="translate(330 180)">
-        <rect x="0" y="0" width="106" height="34" rx="17" fill="#2C2C2E"/>
-        <text x="53" y="23" text-anchor="middle" font-size="17" fill="#0A84FF">Скриншот</text>
-        <rect x="118" y="0" width="130" height="34" rx="17" fill="#2C2C2E"/>
-        <text x="183" y="23" text-anchor="middle" font-size="17" fill="#0A84FF">Во весь экран</text>
-        <rect x="260" y="0" width="88" height="34" rx="17" fill="#2C2C2E"/>
-        <text x="304" y="23" text-anchor="middle" font-size="17" fill="#FF453A">Запись</text>
+      <g transform="translate(260 180)">
+        <rect x="0" y="0" width="114" height="34" rx="17" fill="#2C2C2E"/>
+        <text x="57" y="23" text-anchor="middle" font-size="17" fill="#0A84FF">Скриншот</text>
+        <rect x="126" y="0" width="146" height="34" rx="17" fill="#2C2C2E"/>
+        <text x="199" y="23" text-anchor="middle" font-size="17" fill="#0A84FF">Во весь экран</text>
+        <rect x="284" y="0" width="88" height="34" rx="17" fill="#2C2C2E"/>
+        <text x="328" y="23" text-anchor="middle" font-size="17" fill="#FF453A">Запись</text>
       </g>
     </g>
     <g transform="translate(760 104)">
       <rect width="376" height="224" rx="20" fill="#161618" stroke="#0A84FF" stroke-width="1.5"/>
       <text x="28" y="46" font-size="22" font-weight="600" fill="#F5F5F7">Для автоматизаций</text>
-      <rect x="28" y="70" width="320" height="44" rx="10" fill="#1C1C1E"/>
-      <text x="44" y="99" font-family="ui-monospace, Menlo, monospace" font-size="19" fill="#30D158">mynotify.show</text>
-      <text x="200" y="99" font-family="ui-monospace, Menlo, monospace" font-size="16" fill="#98989F">показать камеру</text>
-      <rect x="28" y="126" width="320" height="44" rx="10" fill="#1C1C1E"/>
-      <text x="44" y="155" font-family="ui-monospace, Menlo, monospace" font-size="19" fill="#30D158">mynotify.hide</text>
-      <text x="200" y="155" font-family="ui-monospace, Menlo, monospace" font-size="16" fill="#98989F">скрыть окно</text>
-      <text x="28" y="204" font-size="18" fill="#98989F">target — тот же выключатель окна</text>
+      <rect x="28" y="70" width="328" height="44" rx="10" fill="#1C1C1E"/>
+      <text x="44" y="99" font-family="ui-monospace, Menlo, monospace" font-size="18" fill="#30D158">mynotify.show</text>
+      <text x="204" y="99" font-family="ui-monospace, Menlo, monospace" font-size="15" fill="#98989F">показать камеру</text>
+      <rect x="28" y="126" width="328" height="44" rx="10" fill="#1C1C1E"/>
+      <text x="44" y="155" font-family="ui-monospace, Menlo, monospace" font-size="18" fill="#30D158">mynotify.hide</text>
+      <text x="204" y="155" font-family="ui-monospace, Menlo, monospace" font-size="15" fill="#98989F">скрыть окно</text>
+      <text x="28" y="204" font-size="17" fill="#98989F">target — тот же выключатель окна</text>
     </g>
   </g>
 </svg>
