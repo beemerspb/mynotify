@@ -179,6 +179,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    if "device_id" not in entry.data:
+        _LOGGER.error(
+            "mynotify: устаревшая запись конфигурации (до v0.6) — "
+            "удали интеграцию и добавь заново с кодом из приложения"
+        )
+        return False
     store(hass)["entries"][entry.entry_id] = entry
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
