@@ -1,27 +1,27 @@
 show:
   name: "Показать камеру"
   description: >-
-    Показывает оверлей-окно MyNotify с видеопотоком на Android-устройстве
-    (планшет/ТВ). stream — имя потока go2rtc (например Cam1) или полный
-    http(s)-URL HLS/потока.
+    Показывает оверлей-окно MyNotify с видеопотоком на привязанном
+    Android-устройстве. stream — имя потока go2rtc (например Cam1) или
+    полный http(s)-URL HLS-потока.
   fields:
     target:
       name: "Устройства"
-      description: "Сущности androidtv_remote (media_player устройства)."
+      description: "Сущности MyNotify (устройства с приложением)."
       required: true
       selector:
         entity:
-          integration: androidtv_remote
-          domain: media_player
+          integration: mynotify
+          domain: humidifier
           multiple: true
     stream:
-      name: "Поток"
+      name: "Камера"
       description: "Имя потока go2rtc или полный URL."
       required: true
       selector:
         text:
     autohide:
-      name: " автоскрытие, сек"
+      name: "Автоскрытие, сек"
       description: "0 — не скрывать автоматически."
       required: false
       default: 0
@@ -32,14 +32,16 @@ show:
 
 hide:
   name: "Скрыть камеру"
-  description: "Закрывает оверлей-окно MyNotify на устройствах."
+  description: >-
+    Закрывает оверлей-окно MyNotify (служба на устройстве продолжает
+    работать в фоне).
   fields:
     target:
       name: "Устройства"
-      description: "Сущности androidtv_remote (media_player устройства)."
+      description: "Сущности MyNotify."
       required: true
       selector:
         entity:
-          integration: androidtv_remote
-          domain: media_player
+          integration: mynotify
+          domain: humidifier
           multiple: true

@@ -17,6 +17,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -33,6 +34,8 @@ class MainActivity : Activity() {
 
     private lateinit var statusText: TextView
     private lateinit var statusDot: TextView
+    private lateinit var codeText: TextView
+    private lateinit var urlInput: EditText
     private lateinit var launchBtn: Button
     private lateinit var stopBtn: Button
     private lateinit var windowBtn: Button
@@ -103,16 +106,40 @@ class MainActivity : Activity() {
     private fun hasOverlayPermission(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
 
+    /** Тот же prefs-файл, что у службы: код привязки виден до её запуска. */
+    private fun pairCode(): String {
+        val p = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        return p.getString("pair_code", null)
+            ?: (100000 + java.util.Random().nextInt(900000)).toString().also {
+                p.edit().putString("pair_code", it).apply()
+            }
+    }
+
     private fun updateStatus() {
         val running = OverlayService.running
         val shown = OverlayService.windowShown
-        statusDot.text = if (running) "●" else "○"
+        val haOk = OverlayService.lastHaOk > 0 &&
+            System.currentTimeMillis() - OverlayService.lastHaOk < 10000
+        statusDot.text = when {
+            running && haOk && OverlayService.bound -> "●"
+            running && haOk -> "◐"
+            running -> "○"
+            else -> " "
+        }
         statusDot.setTextColor(
-            if (running) Color.parseColor("#4CAF50") else Color.parseColor("#9E9E9E"))
+            when {
+                running && haOk && OverlayService.bound -> Color.parseColor("#4CAF50")
+                running && haOk -> Color.parseColor("#FFC107")
+                else -> Color.parseColor("#9E9E9E")
+            })
+        codeText.text = "Код привязки: ${pairCode()}"
         statusText.text = when {
             !running -> "Служба остановлена — нажмите «Запустить службу»"
-            shown -> "Служба запущена — окно показано"
-            else -> "Служба запущена — окно скрыто"
+            !haOk -> "Служба запущена, нет связи с HA — проверьте адрес HA ниже"
+            !OverlayService.bound ->
+                "Введите код на карточке интеграции MyNotify в HA"
+            shown -> "Подключено к HA — окно показано"
+            else -> "Подключено к HA — окно скрыто"
         }
         launchBtn.backgroundTintList = ColorStateList.valueOf(
             if (running) Color.parseColor("#4CAF50") else Color.parseColor("#2196F3"))
@@ -163,6 +190,43 @@ class MainActivity : Activity() {
         header.addView(statusDot)
         header.addView(statusText)
         lay.addView(header)
+
+        codeText = TextView(this).apply {
+            setTextColor(Color.parseColor("#2196F3"))
+            setTypeface(Typeface.DEFAULT_BOLD)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, dp(4))
+            text = "Код привязки: ——-———"
+        }
+        lay.addView(codeText)
+        lay.addView(TextView(this).apply {
+            setTextColor(Color.parseColor("#888888"))
+            gravity = Gravity.CENTER
+            text = "Введите этот код при добавлении устройства в интеграции MyNotify"
+        })
+
+        urlInput = EditText(this).apply {
+            setText(getSharedPreferences("settings", MODE_PRIVATE)
+                .getString("ha_url", "http://homeassistant.local:8123"))
+            hint = "Адрес Home Assistant"
+            setSingleLine()
+            setTextColor(Color.parseColor("#222222"))
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = dp(12)
+            layoutParams = lp
+        }
+        lay.addView(urlInput)
+        lay.addView(niceButton("Сохранить адрес HA").apply {
+            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#607D8B"))
+            setOnClickListener {
+                getSharedPreferences("settings", MODE_PRIVATE).edit()
+                    .putString("ha_url", urlInput.text.toString().trim().trimEnd('/'))
+                    .apply()
+                Toast.makeText(this@MainActivity, "Адрес сохранён", Toast.LENGTH_SHORT).show()
+            }
+        })
 
         if (!hasOverlayPermission()) {
             permBtn = niceButton("Выдать разрешение «Поверх приложений»").apply {
@@ -225,8 +289,8 @@ class MainActivity : Activity() {
 
         lay.addView(TextView(this).apply {
             setTextColor(Color.parseColor("#888888"))
-            text = "Служба работает в фоне — к ней подключается Home Assistant " +
-                "(интеграция MyNotify): там выбирается камера и показ окна."
+            text = "Служба сама подключается к Home Assistant и ждёт команды: " +
+                "там выбирается камера и показ окна. ADB не нужен."
         })
 
         setContentView(

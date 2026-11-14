@@ -40,8 +40,10 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.max
+import org.json.JSONObject
 
 /**
  * Показывает окно с потоком камеры поверх всех приложений.
@@ -68,6 +70,9 @@ class OverlayService : Service() {
         @Volatile var running = false
         /** Окно сейчас показано (не равно «служба запущена»). */
         @Volatile var windowShown = false
+        /** Последний успешный ответ HA (мс) и привязан ли девайс. */
+        @Volatile var lastHaOk = 0L
+        @Volatile var bound = false
     }
 
     private lateinit var prefs: SharedPreferences
@@ -100,6 +105,97 @@ class OverlayService : Service() {
         super.onCreate()
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         running = true
+        startHaLoop()
+    }
+
+    // ---------- связь с Home Assistant ----------
+    // Приложение САМО подключается к HA: регистрируется по коду и опрашивает
+    // очередь команд. Никакого ADB не нужно — достаточно запуска службы.
+
+    private var haThread: Thread? = null
+
+    fun haBase(): String =
+        (prefs.getString("ha_url", "http://homeassistant.local:8123") ?: "").trimEnd('/')
+
+    fun deviceId(): String = prefs.getString("device_id", null)
+        ?: UUID.randomUUID().toString().also {
+            prefs.edit().putString("device_id", it).apply()
+        }
+
+    fun pairCode(): String = prefs.getString("pair_code", null)
+        ?: (100000 + java.util.Random().nextInt(900000)).toString().also {
+            prefs.edit().putString("pair_code", it).apply()
+        }
+
+    private fun http(method: String, url: String, body: String?): String {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.requestMethod = method
+        conn.connectTimeout = 4000
+        conn.readTimeout = 6000
+        if (body != null) {
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use { it.write(body.toByteArray()) }
+        }
+        return conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            .also { conn.disconnect() }
+    }
+
+    private fun startHaLoop() {
+        if (haThread?.isAlive == true) return
+        haThread = Thread {
+            var lastReg = 0L
+            while (!Thread.currentThread().isInterrupted) {
+                try {
+                    val base = haBase()
+                    if (base.isNotBlank() &&
+                        System.currentTimeMillis() - lastReg > 10000
+                    ) {
+                        val body = JSONObject()
+                            .put("device_id", deviceId())
+                            .put("code", pairCode())
+                            .put("name", Build.MODEL)
+                            .toString()
+                        http("POST", "$base/api/mynotify/register", body)
+                        lastReg = System.currentTimeMillis()
+                    }
+                    val resp = JSONObject(
+                        http(
+                            "GET",
+                            "$base/api/mynotify/poll?device=${deviceId()}&code=${pairCode()}",
+                            null
+                        )
+                    )
+                    if (resp.optBoolean("ok")) {
+                        lastHaOk = System.currentTimeMillis()
+                        bound = resp.optBoolean("bound")
+                        when (resp.optString("cmd")) {
+                            "show" -> handler.post {
+                                startForegroundNotify("Камера поверх экрана")
+                                show(resp.getString("url"))
+                                val sec = resp.optInt("autohide", 0)
+                                if (sec > 0) handler.postDelayed(
+                                    { hideWindow() }, sec * 1000L
+                                )
+                            }
+                            "hide" -> handler.post {
+                                hideWindow()
+                                startForegroundNotify("Служба работает — окно скрыто")
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                    lastHaOk = 0L
+                    bound = false
+                }
+                try {
+                    sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
+                    Thread.sleep(2000)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+            }
+        }.apply { isDaemon = true; name = "mynotify-ha"; start() }
     }
 
     /**
@@ -110,6 +206,7 @@ class OverlayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                haThread?.interrupt()
                 hideWindow()
                 running = false
                 stopSelf()
@@ -142,6 +239,7 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        haThread?.interrupt()
         hideWindow()
         running = false
         super.onDestroy()
