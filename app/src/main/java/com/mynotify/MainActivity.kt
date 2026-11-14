@@ -43,6 +43,8 @@ class MainActivity : Activity() {
     private lateinit var launchBtn: Button
     private lateinit var stopBtn: Button
     private lateinit var windowBtn: Button
+    private lateinit var updText: TextView
+    private var checkingUpdate = false
     private var permBtn: Button? = null
 
     private val cLabel get() = ContextCompat.getColor(this, R.color.ios_label)
@@ -452,7 +454,33 @@ class MainActivity : Activity() {
         })
         lay.addView(winCard)
 
-        lay.addView(footer("MyNotify · Home Assistant"))
+        // --- Секция «Приложение»: версия и встроенное обновление ---
+        lay.addView(sectionLabel("Приложение"))
+        val appCard = card()
+        appCard.addView(TextView(this).apply {
+            text = "Версия ${appVersion()}"
+            setTextColor(cLabel)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        })
+        updText = TextView(this).apply {
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(0, dp(6), 0, 0)
+        }
+        appCard.addView(updText)
+        appCard.addView(iosButton("Проверить обновления", cBlue).apply {
+            setOnClickListener { checkUpdate() }
+        })
+        appCard.addView(TextView(this).apply {
+            text = "Обновление скачивается с GitHub и устанавливается " +
+                "обычным системным диалогом."
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(0, dp(8), 0, 0)
+        })
+        lay.addView(appCard)
+
+        lay.addView(footer("MyNotify ${appVersion()} · Home Assistant"))
 
         setContentView(
             ScrollView(this).apply {
@@ -469,6 +497,127 @@ class MainActivity : Activity() {
     }
 
     private val windowHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    // ---------- обновления ----------
+
+    private fun appVersion(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    } catch (_: Exception) { "?" }
+
+    /** latest release на GitHub; находит asset с APK и предлагает установить. */
+    private fun checkUpdate() {
+        if (checkingUpdate) return
+        checkingUpdate = true
+        updText.text = "Проверяю обновления…"
+        Thread {
+            var msg: String
+            var apkUrl = ""
+            var tag = ""
+            try {
+                val con = java.net.URL(
+                    "https://api.github.com/repos/beemerspb/mynotify/releases/latest"
+                ).openConnection() as java.net.HttpURLConnection
+                con.setRequestProperty("User-Agent", "MyNotify")
+                con.connectTimeout = 8000
+                con.readTimeout = 8000
+                val j = org.json.JSONObject(
+                    con.inputStream.bufferedReader().readText()
+                )
+                tag = j.optString("tag_name")
+                val assets = j.optJSONArray("assets")
+                if (assets != null) for (i in 0 until assets.length()) {
+                    val a = assets.getJSONObject(i)
+                    if (a.optString("name").endsWith(".apk")) {
+                        apkUrl = a.getString("browser_download_url")
+                        break
+                    }
+                }
+                when {
+                    tag.removePrefix("v") == appVersion() ->
+                        msg = "Версия ${appVersion()} — последняя"
+                    apkUrl.isEmpty() -> msg = "В релизе $tag нет APK-файла"
+                    else -> msg = "Доступна версия $tag (у вас ${appVersion()})"
+                }
+            } catch (e: Exception) {
+                msg = "Не удалось проверить: ${e.javaClass.simpleName}"
+            }
+            val fin = msg
+            windowHandler.post {
+                checkingUpdate = false
+                updText.text = fin
+                if (apkUrl.isNotEmpty()) {
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("Обновление $tag")
+                        .setMessage(fin)
+                        .setPositiveButton("Скачать и установить") { _, _ ->
+                            startInstall(apkUrl)
+                        }
+                        .setNegativeButton("Позже", null)
+                        .show()
+                }
+            }
+        }.start()
+    }
+
+    private fun startInstall(url: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            updText.text = "Разреши установку из этого приложения и нажми «Проверить» снова"
+            try {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            } catch (_: Exception) {}
+            return
+        }
+        updText.text = "Скачиваю…"
+        Thread {
+            try {
+                val out = java.io.File(getExternalFilesDir(null), "mynotify-update.apk")
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                conn.setRequestProperty("User-Agent", "MyNotify")
+                val total = conn.contentLength
+                conn.inputStream.use { input ->
+                    java.io.FileOutputStream(out).use { os ->
+                        val buf = ByteArray(64 * 1024)
+                        var done = 0L
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n <= 0) break
+                            os.write(buf, 0, n)
+                            done += n
+                            if (total > 0) {
+                                val pct = done * 100 / total
+                                windowHandler.post {
+                                    updText.text = "Скачиваю… $pct%"
+                                }
+                            }
+                        }
+                    }
+                }
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", out
+                )
+                windowHandler.post {
+                    updText.text = "Запускаю установщик…"
+                    val pi = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/vnd.android.package-archive")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(pi)
+                }
+            } catch (e: Exception) {
+                windowHandler.post {
+                    updText.text = "Скачивание не удалось: ${e.javaClass.simpleName}"
+                }
+            }
+        }.start()
+    }
 
     private fun updateSoundLabel() {
         val saved = getSharedPreferences("settings", MODE_PRIVATE)

@@ -26,6 +26,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -77,6 +78,7 @@ class OverlayService : Service() {
     private var wm: WindowManager? = null
     private var root: OverlayRoot? = null
     private var playerView: PlayerView? = null
+    private var playerErrText: TextView? = null
     private var player: ExoPlayer? = null
     private var params: WindowManager.LayoutParams? = null
     private var retries = 0
@@ -166,6 +168,11 @@ class OverlayService : Service() {
                             .put("device_id", deviceId())
                             .put("code", pairCode())
                             .put("name", Build.MODEL)
+                            .put(
+                                "ver",
+                                packageManager.getPackageInfo(packageName, 0).versionName
+                                    ?: "?"
+                            )
                             .toString()
                         http("POST", "$base/api/mynotify/register", body)
                         lastReg = System.currentTimeMillis()
@@ -377,6 +384,18 @@ class OverlayService : Service() {
         container.addView(pv, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
+        // причина отсутствия картинки — прямо по центру окна (диагностика)
+        val errText = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+        container.addView(errText, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        playerErrText = errText
+
         // панель кнопок внизу: полупрозрачный фон, скрыта по умолчанию
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -428,6 +447,7 @@ class OverlayService : Service() {
         try { root?.let { wm?.removeView(it) } } catch (_: Exception) {}
         root = null
         playerView = null
+        playerErrText = null
         uiBar = null
         uiIcons = emptyList()
         fsBtn = null
@@ -502,6 +522,11 @@ class OverlayService : Service() {
         playerView?.player = ex
         ex.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
+                handler.post {
+                    playerErrText?.visibility = View.VISIBLE
+                    playerErrText?.text =
+                        "Нет потока: ${error.errorCodeName}\n${currentUrl()}"
+                }
                 retries++
                 if (retries <= 30) handler.postDelayed({
                     try {
@@ -509,6 +534,12 @@ class OverlayService : Service() {
                         ex.prepare()
                     } catch (_: Exception) {}
                 }, 2000)
+            }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY) {
+                    handler.post { playerErrText?.visibility = View.GONE }
+                }
             }
         })
         ex.setMediaItem(MediaItem.fromUri(url))
