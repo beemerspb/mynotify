@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="t d">
+  <title id="t">Как работает MyNotify</title>
+  <desc id="d">Камеры отдают RTSP в go2rtc; Home Assistant с интеграцией MyNotify шлёт Android-устройству команды по HTTP, а окно на устройстве забирает HLS-видео из go2rtc.</desc>
+  <rect width="1200" height="440" rx="26" fill="#0B0B0F"/>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#98989F"/>
+    </marker>
+    <marker id="arrb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#0A84FF"/>
+    </marker>
+    <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#30D158"/>
+    </marker>
+  </defs>
+  <text x="64" y="72" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="40" font-weight="700" fill="#F5F5F7">Как это работает</text>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <g transform="translate(64 120)">
+      <rect width="230" height="120" rx="18" fill="#1C1C1E" stroke="#38383A" stroke-width="1.5"/>
+      <circle cx="44" cy="44" r="16" fill="none" stroke="#BF5AF2" stroke-width="3"/>
+      <circle cx="44" cy="44" r="6" fill="#BF5AF2"/>
+      <text x="24" y="86" font-size="23" font-weight="600" fill="#F5F5F7">Камеры</text>
+      <text x="80" y="44" font-size="19" fill="#98989F">RTSP</text>
+    </g>
+    <g transform="translate(414 120)">
+      <rect width="230" height="120" rx="18" fill="#1C1C1E" stroke="#38383A" stroke-width="1.5"/>
+      <rect x="28" y="30" width="32" height="26" rx="6" fill="none" stroke="#FF9F0A" stroke-width="3"/>
+      <path d="M44 56 v12 M34 68 h20" stroke="#FF9F0A" stroke-width="3"/>
+      <text x="24" y="86" font-size="23" font-weight="600" fill="#F5F5F7">go2rtc</text>
+      <text x="112" y="44" font-size="19" fill="#98989F">HLS</text>
+    </g>
+    <g transform="translate(764 120)">
+      <rect width="250" height="120" rx="18" fill="#1C1C1E" stroke="#0A84FF" stroke-width="2"/>
+      <path d="M44 52 l16 -16 16 16 v18 h-32 z" fill="none" stroke="#0A84FF" stroke-width="3"/>
+      <text x="24" y="86" font-size="23" font-weight="600" fill="#F5F5F7">Home Assistant</text>
+      <text x="24" y="110" font-size="18" fill="#98989F">интеграция MyNotify</text>
+    </g>
+    <g transform="translate(620 300)">
+      <rect width="394" height="110" rx="18" fill="#1C1C1E" stroke="#30D158" stroke-width="2"/>
+      <rect x="26" y="28" width="40" height="54" rx="8" fill="none" stroke="#30D158" stroke-width="3"/>
+      <text x="84" y="56" font-size="23" font-weight="600" fill="#F5F5F7">Планшет / Android TV</text>
+      <text x="84" y="84" font-size="19" fill="#98989F">окно с камерой поверх экрана</text>
+    </g>
+
+    <path d="M294 180 H406" stroke="#98989F" stroke-width="2.5" marker-end="url(#arr)"/>
+    <path d="M644 180 H756" stroke="#98989F" stroke-width="2.5" marker-end="url(#arr)"/>
+    <path d="M889 240 V272 H560 V320 H612" stroke="#0A84FF" stroke-width="2.5" stroke-dasharray="7 6" fill="none" marker-end="url(#arrb)"/>
+    <text x="640" y="264" font-size="19" fill="#0A84FF">команды HTTP: показать / скрыть / камера</text>
+    <path d="M529 240 V355 H612" stroke="#30D158" stroke-width="2.5" marker-end="url(#arrg)"/>
+    <text x="545" y="347" font-size="19" fill="#30D158">HLS-видео</text>
+    <text x="64" y="360" font-size="19" fill="#98989F">Устройство само опрашивает Home Assistant —</text>
+    <text x="64" y="386" font-size="19" fill="#98989F">никаких открытых портов наружу не нужно.</text>
+  </g>
+</svg>

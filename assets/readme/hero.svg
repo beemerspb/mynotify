@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="t d">
+  <title id="t">MyNotify — живая камера поверх любого экрана, управление из Home Assistant</title>
+  <desc id="d">Приложение для Android показывает плавающее окно с камерой поверх любого контента; управляется из Home Assistant по коду привязки, без ADB и root.</desc>
+  <defs>
+    <linearGradient id="pip" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C1E"/><stop offset="1" stop-color="#0B0B0F"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="400" rx="26" fill="#0B0B0F"/>
+
+  <g id="title-block" transform="translate(64 58)">
+    <text x="0" y="14" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="19" letter-spacing="4" fill="#98989F">HOME ASSISTANT · ANDROID</text>
+    <text x="0" y="96" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="72" font-weight="700" fill="#F5F5F7" letter-spacing="-2">MyNotify</text>
+    <text x="0" y="146" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="25" fill="#98989F">Живая камера поверх любого приложения.</text>
+    <text x="0" y="180" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="25" fill="#98989F">Управление — из Home Assistant.</text>
+    <g transform="translate(0 214)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="19">
+      <rect x="0" y="0" width="196" height="40" rx="20" fill="none" stroke="#30D158" stroke-width="1.5"/>
+      <text x="98" y="26" text-anchor="middle" fill="#30D158">без ADB и root</text>
+      <rect x="212" y="0" width="266" height="40" rx="20" fill="none" stroke="#0A84FF" stroke-width="1.5"/>
+      <text x="345" y="26" text-anchor="middle" fill="#0A84FF">только домашняя сеть</text>
+      <rect x="494" y="0" width="240" height="40" rx="20" fill="none" stroke="#48484A" stroke-width="1.5"/>
+      <text x="614" y="26" text-anchor="middle" fill="#98989F">телефон · планшет · ТВ</text>
+    </g>
+  </g>
+
+  <g id="tablet" transform="translate(830 34)">
+    <rect x="0" y="0" width="300" height="332" rx="30" fill="#1C1C1E" stroke="#38383A" stroke-width="2"/>
+    <text x="150" y="52" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" letter-spacing="3" fill="#98989F">КОД ПРИВЯЗКИ</text>
+    <text x="150" y="104" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="44" font-weight="700" fill="#0A84FF" letter-spacing="4">482 913</text>
+    <rect x="36" y="136" width="228" height="52" rx="14" fill="#2C2C2E"/>
+    <text x="52" y="168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" fill="#98989F">Фоновая служба</text>
+    <rect x="196" y="148" width="52" height="30" rx="15" fill="#30D158"/>
+    <circle cx="233" cy="163" r="12" fill="#FFFFFF"/>
+    <rect x="36" y="204" width="228" height="52" rx="14" fill="#0A84FF"/>
+    <text x="150" y="236" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" font-weight="600" fill="#FFFFFF">Показать окно</text>
+    <rect x="36" y="270" width="228" height="44" rx="14" fill="#2C2C2E"/>
+    <text x="150" y="298" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" fill="#98989F">Скрыть окно</text>
+  </g>
+
+  <g id="pip-window" transform="translate(690 190)">
+    <rect x="8" y="10" width="260" height="160" rx="18" fill="#000000" opacity="0.6"/>
+    <rect x="0" y="0" width="260" height="160" rx="18" fill="url(#pip)" stroke="#0A84FF" stroke-width="2"/>
+    <circle cx="26" cy="26" r="6" fill="#FF453A"/>
+    <text x="42" y="32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" fill="#F5F5F7">Камера · в эфире</text>
+    <g transform="translate(86 62)" stroke="#F5F5F7" stroke-width="3" fill="none">
+      <rect x="0" y="10" width="56" height="38" rx="8"/>
+      <path d="M56 22 L78 10 V58 L56 46 Z"/>
+    </g>
+    <rect x="76" y="122" width="108" height="28" rx="14" fill="#38383A"/>
+    <text x="130" y="141" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" fill="#F5F5F7">Скрыть</text>
+  </g>
+</svg>
