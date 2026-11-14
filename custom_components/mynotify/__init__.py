@@ -74,10 +74,15 @@ def base_url(hass: HomeAssistant) -> str:
 
 
 def build_url(hass: HomeAssistant, stream: str) -> str:
-    """Имя потока go2rtc -> HLS URL; полный http(s)-URL проходит как есть."""
+    """Имя потока go2rtc -> HLS URL; полный http(s)-URL проходит как есть.
+
+    video=all&audio=aac включает в go2rtc fMP4-ветку HLS: TS-ветка (без
+    фильтров) теряет AAC-пакеты (0-1 на сегмент) — звук прерывался;
+    fMP4+audio=aac отдаёт ровные 21.3 мс без дыр (замерено ffprobe).
+    """
     if stream.startswith(("http://", "https://")):
         return stream
-    return f"{base_url(hass)}/api/stream.m3u8?src={stream}"
+    return f"{base_url(hass)}/api/stream.m3u8?src={stream}&video=all&audio=aac"
 
 
 def _proxied(abs_url: str, device: str, code: str) -> str:

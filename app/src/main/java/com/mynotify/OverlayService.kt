@@ -500,11 +500,24 @@ class OverlayService : Service() {
         cornerViews = listOf(cBL, cTR)
 
         root = container
-        wm!!.addView(container, p)
-        baseWindowW = w
-        windowShown = true
-        applyUiScale()
-        showUi() // при показе панель видна, затем скроется через 6 с
+        try {
+            wm!!.addView(container, p)
+            // факт успешного показа окна — главный признак разрешения
+            // (на ТВ canDrawOverlays может врать в обе стороны)
+            getSharedPreferences("settings", MODE_PRIVATE)
+                .edit().putBoolean("overlay_ok", true).apply()
+            baseWindowW = w
+            windowShown = true
+            applyUiScale()
+            showUi() // при показе панель видна, затем скроется через 6 с
+        } catch (e: Exception) {
+            // нет реального разрешения (BadToken) — не класть сервис,
+            // окно просто не покажем; настройки честно потребуют разрешение
+            getSharedPreferences("settings", MODE_PRIVATE)
+                .edit().putBoolean("overlay_ok", false).apply()
+            root = null
+            windowShown = false
+        }
         try {
             sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
         } catch (_: Exception) {}
