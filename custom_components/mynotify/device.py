@@ -121,6 +121,7 @@ class Device:
     async def hide(self) -> None:
         send_command(self.hass, self.device_id, {"cmd": "hide"})
         self.on = False
+        self.notify()
 
     def set_stream(self, stream: str) -> None:
         self.stream = stream

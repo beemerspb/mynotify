@@ -180,7 +180,7 @@ class OverlayService : Service() {
                     val resp = JSONObject(
                         http(
                             "GET",
-                            "$base/api/mynotify/poll?device=${deviceId()}&code=${pairCode()}",
+                            "$base/api/mynotify/poll?device=${deviceId()}&code=${pairCode()}&state=${if (windowShown) 1 else 0}",
                             null
                         )
                     )

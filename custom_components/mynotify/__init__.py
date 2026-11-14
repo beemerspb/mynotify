@@ -146,6 +146,26 @@ def is_online(hass: HomeAssistant, device_id: str) -> bool:
     return store(hass)["seen"].get(device_id, 0) > time.time() - STALE_SEC
 
 
+def apply_state_report(st: dict, device_id: str, code: str, state: str) -> bool:
+    """Синхронизация состояния окна по репорту устройства (параметр poll).
+
+    Приложение шлёт фактическое состояние окна (1/0) в каждом опросе —
+    так переключение/закрытие окна на самом устройстве (кнопка «X»,
+    автоскрытие, жест) отражается в switch-сущности HA.
+    """
+    for e in st["entries"].values():
+        if e.data.get("device_id") == device_id and e.data.get("device_code") == code:
+            dev = st.get("devices", {}).get(e.entry_id)
+            if dev is None:
+                return False
+            new_on = state == "1"
+            if dev.on != new_on:
+                dev.on = new_on
+                dev.notify()
+            return True
+    return False
+
+
 async def async_get_streams(hass: HomeAssistant) -> list[str]:
     """Список имён потоков go2rtc (без служебных rtsp-ключей)."""
     session = async_get_clientsession(hass)
@@ -217,6 +237,9 @@ class PollView(HomeAssistantView):
         if not bound and st["pending"].get(code, {}).get("device_id") != device_id:
             return self.json({"ok": False})
         st["seen"][device_id] = time.time()
+        rep = request.query.get("state")
+        if rep is not None:
+            apply_state_report(st, device_id, code, rep)
         queue = st["queues"].get(device_id) or []
         cmd = {}
         while queue:
