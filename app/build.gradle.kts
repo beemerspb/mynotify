@@ -11,8 +11,8 @@ android {
         applicationId = "com.mynotify"
         minSdk = 21
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.7.10"
+        versionCode = 27
+        versionName = "0.7.11"
     }
 
     compileOptions {

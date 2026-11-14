@@ -17,6 +17,7 @@ import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -191,6 +192,37 @@ class MainActivity : Activity() {
     }
 
     /** Кнопка iOS: сплошной акцент, скругление 14, medium 17sp. */
+    // Мигающий красный контур фокуса (для пульта ТВ): foreground-кольцо,
+    // фон элемента не трогает.
+    private val blinkTagId = View.generateViewId()
+
+    private fun attachFocusBlink(v: View, radiusDp: Int) {
+        v.isFocusable = true
+        val ring = android.graphics.drawable.GradientDrawable().apply {
+            setColor(android.graphics.Color.TRANSPARENT)
+            setStroke(dp(3), android.graphics.Color.parseColor("#FFFF3B30"))
+            cornerRadius = dp(radiusDp).toFloat()
+        }
+        ring.alpha = 0
+        v.foreground = ring
+        v.setOnFocusChangeListener { view, focused ->
+            if (focused) {
+                ring.alpha = 255
+                val anim = android.animation.ObjectAnimator.ofInt(ring, "alpha", 255, 0, 255)
+                    .apply {
+                        duration = 900
+                        repeatCount = android.animation.ObjectAnimator.INFINITE
+                    }
+                view.setTag(blinkTagId, anim)
+                anim.start()
+            } else {
+                (view.getTag(blinkTagId) as? android.animation.ObjectAnimator)?.cancel()
+                view.setTag(blinkTagId, null)
+                ring.alpha = 0
+            }
+        }
+    }
+
     private fun iosButton(text: String, color: Int): Button = Button(this).apply {
         this.text = text
         isAllCaps = false
@@ -215,6 +247,7 @@ class MainActivity : Activity() {
                 }
             )
         }
+        attachFocusBlink(this, 14)
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(50))
         lp.topMargin = dp(10)
@@ -478,6 +511,8 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, checked ->
                 mutePrefs.edit().putBoolean("mute_on_start", checked).apply()
             }
+            // мигающий красный контур фокуса (виден с пульта ТВ)
+            attachFocusBlink(this, 10)
         }
         winCard.addView(muteCheck)
         lay.addView(winCard)

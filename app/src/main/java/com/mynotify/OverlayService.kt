@@ -323,6 +323,36 @@ class OverlayService : Service() {
     }
 
     /** Круглая полупрозрачная кнопка-иконка для панели окна. */
+    // Мигающий красный контур фокуса (видно на ТВ с пульта). Навешивается
+    // как foreground — фон кнопки (пилюля/скругления) не трогает.
+    private val blinkTagId = View.generateViewId()
+
+    private fun attachFocusBlink(v: View, radiusDp: Int) {
+        val ring = GradientDrawable().apply {
+            setColor(Color.TRANSPARENT)
+            setStroke(dp(3), Color.parseColor("#FFFF3B30"))
+            cornerRadius = dp(radiusDp).toFloat()
+        }
+        ring.alpha = 0
+        v.foreground = ring
+        v.setOnFocusChangeListener { view, focused ->
+            if (focused) {
+                ring.alpha = 255
+                val anim = android.animation.ObjectAnimator.ofInt(ring, "alpha", 255, 0, 255)
+                    .apply {
+                        duration = 900
+                        repeatCount = android.animation.ObjectAnimator.INFINITE
+                    }
+                view.setTag(blinkTagId, anim)
+                anim.start()
+            } else {
+                (view.getTag(blinkTagId) as? android.animation.ObjectAnimator)?.cancel()
+                view.setTag(blinkTagId, null)
+                ring.alpha = 0
+            }
+        }
+    }
+
     private fun iconButton(resIcon: Int, desc: String, action: () -> Unit): ImageButton =
         ImageButton(this).apply {
             setImageResource(resIcon)
@@ -350,7 +380,8 @@ class OverlayService : Service() {
                         cornerRadius = dp(22).toFloat()
                     }
                 )
-            }
+                }
+                attachFocusBlink(this, 22)
             setOnClickListener { showUi(); action() }
         }
 
