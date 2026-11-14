@@ -202,6 +202,14 @@ class MainActivity : Activity() {
             setColor(color)
             cornerRadius = dp(14).toFloat()
         }
+        // подсветка фокуса для пульта ДУ (Android TV)
+        setOnFocusChangeListener { v, f ->
+            (v.background as? GradientDrawable)?.setStroke(
+                if (f) dp(3) else 0, Color.parseColor("#FFFFFFFF")
+            )
+            v.scaleX = if (f) 1.04f else 1f
+            v.scaleY = if (f) 1.04f else 1f
+        }
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(50))
         lp.topMargin = dp(10)

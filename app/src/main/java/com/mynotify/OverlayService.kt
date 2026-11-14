@@ -333,16 +333,18 @@ class OverlayService : Service() {
                 setColor(Color.parseColor("#B31C1C1E"))
                 cornerRadius = dp(22).toFloat()
             }
-            isFocusable = !hasTouch
+            isFocusable = true
             isClickable = true
-            // подсветка фокуса для пульта ДУ (Android TV)
+            // Жирная подсветка фокуса для пульта ДУ (ТВ): синий круг,
+            // белая обводка, увеличение — фокус видно из-за дивана
             setOnFocusChangeListener { v, f ->
                 v.background = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (f) "#E60A84FF" else "#B31C1C1E"))
+                    setColor(Color.parseColor(if (f) "#FF2979FF" else "#B31C1C1E"))
                     cornerRadius = dp(22).toFloat()
+                    if (f) setStroke(dp(3), Color.parseColor("#FFFFFFFF"))
                 }
-                v.scaleX = if (f) 1.15f else 1f
-                v.scaleY = if (f) 1.15f else 1f
+                v.scaleX = if (f) 1.3f else 1f
+                v.scaleY = if (f) 1.3f else 1f
             }
             setOnClickListener { showUi(); action() }
         }
@@ -431,6 +433,11 @@ class OverlayService : Service() {
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
         barLp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
         barLp.bottomMargin = dp(8)
+        // увеличенные при фокусе кнопки не должны обрезаться панелью
+        bar.clipChildren = false
+        bar.clipToPadding = false
+        container.clipChildren = false
+        container.clipToPadding = false
         container.addView(bar, barLp)
         uiBar = bar
 
@@ -494,7 +501,9 @@ class OverlayService : Service() {
         setCornersVisible(if (hasTouch && !fullscreen) View.VISIBLE else View.GONE)
         if (!hasTouch && uiBar?.hasFocus() != true) uiIcons.firstOrNull()?.requestFocus()
         handler.removeCallbacks(uiHideRunnable)
-        handler.postDelayed(uiHideRunnable, UI_TIMEOUT_MS)
+        // ТВ: пока фокус внутри панели — не прятать её (иначе фокус теряется)
+        if (uiBar?.hasFocus() != true)
+            handler.postDelayed(uiHideRunnable, UI_TIMEOUT_MS)
     }
 
     private fun hideUi() {
