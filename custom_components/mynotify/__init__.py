@@ -100,6 +100,7 @@ class RegisterView(HomeAssistantView):
 
     url = "/api/mynotify/register"
     url_path = "/api/mynotify/register"
+    name = "api:mynotify:register"
     requires_auth = False
 
     async def post(self, request: web.Request) -> web.Response:
@@ -111,7 +112,11 @@ class RegisterView(HomeAssistantView):
         if len(code) != 6 or not device_id:
             return self.json({"ok": False, "error": "bad_request"})
         st = store(hass)
-        st["pending"][code] = {"device_id": device_id, "name": name, "ts": time.time()}
+        now = time.time()
+        # чистим протухшие незакрытые заявки (сутки)
+        for k in [k for k, v in st["pending"].items() if now - v["ts"] > 86400]:
+            st["pending"].pop(k, None)
+        st["pending"][code] = {"device_id": device_id, "name": name, "ts": now}
         bound = any(
             e.data.get("device_id") == device_id for e in st["entries"].values()
         )
@@ -125,6 +130,7 @@ class PollView(HomeAssistantView):
 
     url = "/api/mynotify/poll"
     url_path = "/api/mynotify/poll"
+    name = "api:mynotify:poll"
     requires_auth = False
 
     async def get(self, request: web.Request) -> web.Response:
