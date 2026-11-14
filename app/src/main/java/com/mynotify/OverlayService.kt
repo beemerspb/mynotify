@@ -67,6 +67,9 @@ class OverlayService : Service() {
         /** Последний успешный ответ HA (мс) и привязан ли девайс. */
         @Volatile var lastHaOk = 0L
         @Volatile var bound = false
+
+        /** Адрес HA, по которому служба сейчас успешно ходит (LAN или внешний). */
+        @Volatile var activeBase = ""
     }
 
     private lateinit var prefs: SharedPreferences
@@ -178,10 +181,23 @@ class OverlayService : Service() {
                     if (ok) {
                         lastHaOk = System.currentTimeMillis()
                         bound = resp.optBoolean("bound")
+                        // поток проксируется через HA — берём тот адрес HA,
+                        // по которому сейчас реально ходим (LAN или внешний)
+                        if (base != activeBase) {
+                            activeBase = base
+                            if (windowShown) handler.post { startStream(pickUrl()) }
+                        }
                         when (resp.optString("cmd")) {
                             "show" -> handler.post {
                                 startForegroundNotify("Камера поверх экрана")
-                                show(resp.getString("url"))
+                                prefs.edit()
+                                    .putString("url", resp.optString("url", ""))
+                                    .putString(
+                                        "stream_path",
+                                        resp.optString("path", "")
+                                    )
+                                    .apply()
+                                show(pickUrl())
                                 val sec = resp.optInt("autohide", 0)
                                 if (sec > 0) handler.postDelayed(
                                     { hideWindow() }, sec * 1000L
@@ -236,8 +252,8 @@ class OverlayService : Service() {
             }
             ACTION_SHOW -> {
                 startForegroundNotify("Камера поверх экрана")
-                val url = intent.getStringExtra(EXTRA_URL)
-                    ?: prefs.getString("url", null) ?: ""
+                val url = intent.getStringExtra(EXTRA_URL)?.takeIf { it.isNotBlank() }
+                    ?: pickUrl()
                 if (url.isBlank()) {
                     startForegroundNotify("Нет адреса потока — отправьте камеру из HA")
                     return START_STICKY
@@ -268,9 +284,21 @@ class OverlayService : Service() {
 
     private fun show(url: String) {
         if (root == null) createWindow()
-        prefs.edit().putString("url", url).apply()
         startStream(url)
         playPopupSound()
+    }
+
+    /**
+     * Адрес потока: через прокси активного HA (работает и из локальной сети,
+     * и снаружи), иначе — последний прямой URL от интеграции (старая версия).
+     */
+    private fun pickUrl(): String {
+        val path = prefs.getString("stream_path", "") ?: ""
+        if (path.isNotEmpty()) {
+            val base = activeBase.ifBlank { haBase() }
+            if (base.isNotEmpty()) return base + path
+        }
+        return prefs.getString("url", "") ?: ""
     }
 
     /** Звук из системных рингтонов — играется при показе окна. */
@@ -489,8 +517,7 @@ class OverlayService : Service() {
         retries = 0
     }
 
-    private fun currentUrl(): String =
-        prefs.getString("url", null) ?: DEFAULT_URL
+    private fun currentUrl(): String = pickUrl().ifBlank { DEFAULT_URL }
 
 
     // ---------- действия панели ----------

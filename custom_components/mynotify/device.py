@@ -26,6 +26,7 @@ from . import (
     is_online,
     send_command,
     store,
+    stream_path,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -101,11 +102,19 @@ class Device:
             # показ конкретной камеры (сервис/автоматизация) — запоминаем её
             # как выбранную, чтобы список «Камера» в UI показывал правду
             self.set_stream(s)
-        send_command(
-            self.hass,
-            self.device_id,
-            {"cmd": "show", "url": build_url(self.hass, s), "autohide": autohide},
+        cmd = {
+            "cmd": "show",
+            "url": build_url(self.hass, s),
+            "autohide": autohide,
+        }
+        # относительный путь через прокси HA: работает и из локальной сети,
+        # и снаружи — приложение подставит активный адрес HA
+        path = stream_path(
+            self.hass, self.device_id, self.entry.data["device_code"], s
         )
+        if path:
+            cmd["path"] = path
+        send_command(self.hass, self.device_id, cmd)
         self.on = True
         self.notify()
 
