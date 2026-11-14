@@ -40,7 +40,7 @@
       <text x="30" y="230" font-size="20" fill="#F5F5F7">Камера</text>
       <rect x="218" y="208" width="104" height="32" rx="10" fill="#2C2C2E"/>
       <text x="270" y="229" text-anchor="middle" font-size="18" fill="#98989F">Cam4 ⌄</text>
-      <text x="30" y="282" font-size="18" fill="#98989F">Плюс кнопки и сервисы</text>
+      <text x="30" y="282" font-size="18" fill="#98989F">Плюс сервисы show и hide</text>
       <text x="30" y="310" font-size="18" fill="#98989F">для автоматизаций.</text>
     </g>
   </g>
