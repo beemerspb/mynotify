@@ -13,7 +13,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-30D158" alt="Лицензия MIT"></a>
 </p>
 
-Текущая версия — **0.7.7** (приложение и интеграция под одним номером,
+Текущая версия — **0.7.8** (приложение и интеграция под одним номером,
 история в [CHANGELOG](CHANGELOG.md)).
 
 ## Простыми словами
@@ -111,6 +111,7 @@ action:
       target: switch.mynotify_<ID устройства>
       stream: Cam4        # имя потока go2rtc или полный http(s)-URL
       autohide: 30          # секунд; 0 — окно висит, пока не скроешь
+      mute: false           # optional: true — без звука, false — со звуком
 ```
 
 Скрыть: `action: mynotify.hide` с тем же `target`. Выбор камеры из списка

@@ -8,13 +8,46 @@ from __future__ import annotations
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.core import callback
 
-from . import CONF_GO2RTC_URL, DEFAULT_GO2RTC, DOMAIN, ensure_views, store
+from . import (
+    CONF_GO2RTC_URL,
+    DEFAULT_GO2RTC,
+    DOMAIN,
+    OPT_MUTE,
+    ensure_views,
+    store,
+)
+
+
+class MyNotifyOptionsFlow(config_entries.OptionsFlow):
+    """Настройки устройства: звук по умолчанию."""
+
+    def __init__(self, entry: config_entries.ConfigEntry) -> None:
+        self._entry = entry
+
+    async def async_step_init(self, user_input=None):
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+        cur = (self._entry.options or {}).get(OPT_MUTE, True)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {vol.Required(OPT_MUTE, default=cur): bool}
+            ),
+        )
 
 
 class MyNotifyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     supports_reconfigure_flow = True
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> MyNotifyOptionsFlow:
+        return MyNotifyOptionsFlow(config_entry)
 
     def __init__(self) -> None:
         self._go2rtc = DEFAULT_GO2RTC

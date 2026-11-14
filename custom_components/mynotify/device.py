@@ -20,10 +20,12 @@ from homeassistant.helpers.update_coordinator import (
 from . import (
     CONF_GO2RTC_URL,
     DOMAIN,
+    OPT_MUTE,
     OPT_STREAM,
     async_get_streams,
     build_url,
     is_online,
+    resolve_mute,
     send_command,
     store,
     stream_path,
@@ -93,7 +95,9 @@ class Device:
             return self.stream
         return self.coord.streams[0] if self.coord.streams else None
 
-    async def show(self, stream: str | None = None, autohide: int = 0) -> None:
+    async def show(
+        self, stream: str | None = None, autohide: int = 0, mute: bool | None = None
+    ) -> None:
         s = stream or self.current_stream()
         if not s:
             _LOGGER.warning("mynotify: нет ни одной камеры go2rtc для показа")
@@ -102,10 +106,17 @@ class Device:
             # показ конкретной камеры (сервис/автоматизация) — запоминаем её
             # как выбранную, чтобы список «Камера» в UI показывал правду
             self.set_stream(s)
+        m = resolve_mute((self.entry.options or {}).get(OPT_MUTE), mute)
+        if mute is not None and (self.entry.options or {}).get(OPT_MUTE) != m:
+            # параметр из службы синхронизируется с настройкой устройства
+            self.hass.config_entries.async_update_entry(
+                self.entry, options={**(self.entry.options or {}), OPT_MUTE: m}
+            )
         cmd = {
             "cmd": "show",
             "url": build_url(self.hass, s),
             "autohide": autohide,
+            "mute": 1 if m else 0,
         }
         # относительный путь через прокси HA: работает и из локальной сети,
         # и снаружи — приложение подставит активный адрес HA

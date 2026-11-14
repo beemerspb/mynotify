@@ -199,13 +199,16 @@ class OverlayService : Service() {
                         when (resp.optString("cmd")) {
                             "show" -> handler.post {
                                 startForegroundNotify("Камера поверх экрана")
-                                prefs.edit()
+                                val ed = prefs.edit()
                                     .putString("url", resp.optString("url", ""))
                                     .putString(
                                         "stream_path",
                                         resp.optString("path", "")
                                     )
-                                    .apply()
+                                // mute из HA-команды синхронизируется с настройкой
+                                if (resp.has("mute"))
+                                    ed.putBoolean("mute_on_start", resp.optInt("mute", 1) == 1)
+                                ed.apply()
                                 show(pickUrl())
                                 val sec = resp.optInt("autohide", 0)
                                 if (sec > 0) handler.postDelayed(
@@ -609,6 +612,8 @@ class OverlayService : Service() {
         volBtn?.setImageResource(
             if (muted) R.drawable.ic_volume_off else R.drawable.ic_volume_up
         )
+        // синхронизация с настройкой «Mute при старте окна»
+        prefs.edit().putBoolean("mute_on_start", muted).apply()
     }
 
     private fun toggleFullscreen() {

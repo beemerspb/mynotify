@@ -50,8 +50,10 @@ class OverlaySwitch(MyNotifyEntity, RestoreEntity, SwitchEntity):
 
     # --- вызовы из сервисов mynotify.show / mynotify.hide ---
 
-    async def async_show_camera(self, stream: str, autohide: int = 0) -> None:
-        await self._dev.show(stream, autohide)
+    async def async_show_camera(
+        self, stream: str, autohide: int = 0, mute: bool | None = None
+    ) -> None:
+        await self._dev.show(stream, autohide, mute)
         self.async_write_ha_state()
 
     async def async_hide_window(self) -> None:

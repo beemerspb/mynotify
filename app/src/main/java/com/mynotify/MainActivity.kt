@@ -452,31 +452,21 @@ class MainActivity : Activity() {
                 startActivityForResult(i, REQ_SOUND)
             }
         })
-        winCard.addView(TextView(this).apply {
-            text = "MUTE ПРИ СТАРТЕ ОКНА"
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            letterSpacing = 0.08f
-            setPadding(0, dp(16), 0, 0)
-        })
-        val muteVal = TextView(this).apply {
+        val mutePrefs = getSharedPreferences("settings", MODE_PRIVATE)
+        val muteCheck = android.widget.CheckBox(this).apply {
+            text = "Заглушать звук при старте окна"
             setTextColor(cLabel)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            setPadding(0, dp(4), 0, 0)
-            isClickable = true
+            setPadding(0, dp(16), 0, 0)
+            setButtonTintList(
+                android.content.res.ColorStateList.valueOf(cBlue)
+            )
+            isChecked = mutePrefs.getBoolean("mute_on_start", true)
+            setOnCheckedChangeListener { _, checked ->
+                mutePrefs.edit().putBoolean("mute_on_start", checked).apply()
+            }
         }
-        fun muteLabel(on: Boolean) {
-            muteVal.text = if (on) "Включён — окно открывается без звука"
-                           else "Выключен — окно открывается со звуком"
-        }
-        val mutePrefs = getSharedPreferences("settings", MODE_PRIVATE)
-        muteLabel(mutePrefs.getBoolean("mute_on_start", true))
-        muteVal.setOnClickListener {
-            val nv = !mutePrefs.getBoolean("mute_on_start", true)
-            mutePrefs.edit().putBoolean("mute_on_start", nv).apply()
-            muteLabel(nv)
-        }
-        winCard.addView(muteVal)
+        winCard.addView(muteCheck)
         lay.addView(winCard)
 
         // --- Секция «Приложение»: версия и встроенное обновление ---

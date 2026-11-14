@@ -28,5 +28,15 @@
       "already_configured": "Это устройство уже добавлено.",
       "bad_url": "URL должен начинаться с http:// или https://"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Настройки MyNotify",
+        "data": {
+          "mute": "Заглушать звук при показе окна"
+        }
+      }
+    }
   }
 }

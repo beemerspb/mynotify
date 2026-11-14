@@ -39,6 +39,8 @@ CONF_STREAM = "stream"
 CONF_AUTOHIDE = "autohide"
 
 OPT_STREAM = "stream"
+OPT_MUTE = "mute"
+CONF_MUTE = "mute"
 
 DEFAULT_GO2RTC = "http://homeassistant.local:1984"
 
@@ -51,6 +53,7 @@ SCHEMA_SHOW = vol.Schema(
         vol.Optional(CONF_AUTOHIDE, default=0): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=3600)
         ),
+        vol.Optional(CONF_MUTE): cv.boolean,
     }
 )
 
@@ -144,6 +147,16 @@ def send_command(hass: HomeAssistant, device_id: str, cmd: dict) -> None:
 
 def is_online(hass: HomeAssistant, device_id: str) -> bool:
     return store(hass)["seen"].get(device_id, 0) > time.time() - STALE_SEC
+
+
+def resolve_mute(entry_option: bool | None, service_value: bool | None) -> bool:
+    """Итоговый mute для команды: явный параметр службы важнее настройки
+    устройства; если и там пусто — без звука по умолчанию."""
+    if service_value is not None:
+        return bool(service_value)
+    if entry_option is not None:
+        return bool(entry_option)
+    return True
 
 
 def apply_state_report(st: dict, device_id: str, code: str, state: str) -> bool:
@@ -339,7 +352,9 @@ def _register_services(hass: HomeAssistant) -> None:
                 _LOGGER.warning("mynotify: неизвестная цель %s", eid)
                 continue
             await ent.async_show_camera(
-                call.data[CONF_STREAM], call.data.get(CONF_AUTOHIDE, 0)
+                call.data[CONF_STREAM],
+                call.data.get(CONF_AUTOHIDE, 0),
+                call.data.get(CONF_MUTE),
             )
 
     async def async_hide(call: ServiceCall) -> None:
