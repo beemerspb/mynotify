@@ -86,6 +86,8 @@ class OverlayService : Service() {
     private var uiBar: LinearLayout? = null
     private var uiIcons: List<ImageButton> = emptyList()
     private var fsBtn: ImageButton? = null
+    private var volBtn: ImageButton? = null
+    @Volatile private var muted = false
     private var baseWindowW = 0 // ширина окна при создании — эталон масштаба кнопок
     private var cornerView: View? = null
     private val uiHideRunnable = Runnable { hideUi() }
@@ -408,6 +410,9 @@ class OverlayService : Service() {
         val fs = iconButton(R.drawable.ic_fullscreen, "Во весь экран") { toggleFullscreen() }
         fsBtn = fs
         bar.addView(fs)
+        val vol = iconButton(R.drawable.ic_volume_off, "Звук вкл/выкл") { toggleMute() }
+        volBtn = vol
+        bar.addView(vol)
         uiIcons = (0 until bar.childCount).mapNotNull { bar.getChildAt(it) as? ImageButton }
         val barLp = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
@@ -520,6 +525,15 @@ class OverlayService : Service() {
         val ex = ExoPlayer.Builder(this).build()
         player = ex
         playerView?.player = ex
+        // «Mute при старте» из настроек: окно может открываться без звука,
+        // включается иконкой динамика в панели окна
+        muted = prefs.getBoolean("mute_on_start", false)
+        ex.volume = if (muted) 0f else 1f
+        handler.post {
+            volBtn?.setImageResource(
+                if (muted) R.drawable.ic_volume_off else R.drawable.ic_volume_up
+            )
+        }
         ex.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 handler.post {
@@ -566,6 +580,15 @@ class OverlayService : Service() {
 
 
     // ---------- действия панели ----------
+
+    /** Звук вкл/выкл текущего потока (иконка динамика в панели окна). */
+    private fun toggleMute() {
+        muted = !muted
+        player?.volume = if (muted) 0f else 1f
+        volBtn?.setImageResource(
+            if (muted) R.drawable.ic_volume_off else R.drawable.ic_volume_up
+        )
+    }
 
     private fun toggleFullscreen() {
         val p = params ?: return

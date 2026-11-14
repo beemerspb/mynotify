@@ -452,6 +452,31 @@ class MainActivity : Activity() {
                 startActivityForResult(i, REQ_SOUND)
             }
         })
+        winCard.addView(TextView(this).apply {
+            text = "MUTE ПРИ СТАРТЕ ОКНА"
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            letterSpacing = 0.08f
+            setPadding(0, dp(16), 0, 0)
+        })
+        val muteVal = TextView(this).apply {
+            setTextColor(cLabel)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding(0, dp(4), 0, 0)
+            isClickable = true
+        }
+        fun muteLabel(on: Boolean) {
+            muteVal.text = if (on) "Включён — окно открывается без звука"
+                           else "Выключен — окно открывается со звуком"
+        }
+        val mutePrefs = getSharedPreferences("settings", MODE_PRIVATE)
+        muteLabel(mutePrefs.getBoolean("mute_on_start", false))
+        muteVal.setOnClickListener {
+            val nv = !mutePrefs.getBoolean("mute_on_start", false)
+            mutePrefs.edit().putBoolean("mute_on_start", nv).apply()
+            muteLabel(nv)
+        }
+        winCard.addView(muteVal)
         lay.addView(winCard)
 
         // --- Секция «Приложение»: версия и встроенное обновление ---
