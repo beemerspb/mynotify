@@ -23,8 +23,8 @@ class OverlaySwitch(MyNotifyEntity, RestoreEntity, SwitchEntity):
 
     def __init__(self, dev) -> None:
         super().__init__(dev, "push", "Показ окна", "mdi:cctv")
-        # стабильный короткий entity_id: switch.mynotify_<устройство>_push
-        self._attr_suggested_object_id = f"{slugify(dev.entry.title)}_push"
+        # стабильный entity_id: switch.mynotify_<ID устройства>
+        self._attr_suggested_object_id = f"mynotify_{slugify(dev.entry.title)}"
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
