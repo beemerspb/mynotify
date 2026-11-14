@@ -591,7 +591,13 @@ class OverlayService : Service() {
 
     private fun startStream(url: String) {
         player?.release()
-        val ex = ExoPlayer.Builder(this).build()
+        // Буферизация для живого HLS с короткими (0.5 c) сегментами go2rtc:
+        // иначе каждый стык сегмента = приседание звука
+        val load = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(10_000, 30_000, 1_500, 2_000)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+        val ex = ExoPlayer.Builder(this).setLoadControl(load).build()
         player = ex
         playerView?.player = ex
         // «Mute при старте» из настроек: окно может открываться без звука,

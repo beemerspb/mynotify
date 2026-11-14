@@ -287,11 +287,11 @@ class StreamView(HomeAssistantView):
             e.data.get("device_id") == device and e.data.get("device_code") == code
             for e in st["entries"].values()
         ):
-            return self.json({"ok": False, "error": "unauthorized"}, status=401)
+            return web.json_response({"ok": False, "error": "unauthorized"}, status=401)
         u = request.query.get("u", "")
         base = base_url(hass)
         if not u.startswith(base + "/"):
-            return self.json({"ok": False, "error": "forbidden"}, status=403)
+            return web.json_response({"ok": False, "error": "forbidden"}, status=403)
         headers = {}
         if "Range" in request.headers:
             headers["Range"] = request.headers["Range"]
@@ -321,7 +321,7 @@ class StreamView(HomeAssistantView):
                 return resp
         except Exception as err:  # noqa: BLE001 — клиент ушёл/go2rtc лёг
             _LOGGER.debug("mynotify: стрим-прокси %s: %s", u, err)
-            return self.json({"ok": False, "error": "upstream"}, status=502)
+            return web.json_response({"ok": False, "error": "upstream"}, status=502)
 
 
 def ensure_views(hass: HomeAssistant) -> None:
