@@ -9,6 +9,7 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -31,10 +32,14 @@ import androidx.core.content.ContextCompat
  */
 class MainActivity : Activity() {
 
+    companion object { private const val REQ_SOUND = 41 }
+
     private lateinit var statusText: TextView
     private lateinit var statusDot: TextView
     private lateinit var codeText: TextView
     private lateinit var urlInput: EditText
+    private lateinit var extUrlInput: EditText
+    private lateinit var soundText: TextView
     private lateinit var launchBtn: Button
     private lateinit var stopBtn: Button
     private lateinit var windowBtn: Button
@@ -306,13 +311,41 @@ class MainActivity : Activity() {
             layoutParams = lp
         }
         pairCard.addView(urlInput)
-        pairCard.addView(iosButton("Сохранить адрес", cGray).apply {
+        extUrlInput = EditText(this).apply {
+            setText(getSharedPreferences("settings", MODE_PRIVATE)
+                .getString("ha_url_ext", ""))
+            hint = "Ссылка HA извне (необязательно): https://ha.example.com"
+            setSingleLine()
+            setTextColor(cLabel)
+            setHintTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            background = GradientDrawable().apply {
+                setColor(ContextCompat.getColor(this@MainActivity, R.color.ios_field))
+                cornerRadius = dp(12).toFloat()
+            }
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = dp(8)
+            layoutParams = lp
+        }
+        pairCard.addView(extUrlInput)
+        pairCard.addView(iosButton("Сохранить адреса", cGray).apply {
             setOnClickListener {
                 getSharedPreferences("settings", MODE_PRIVATE).edit()
                     .putString("ha_url", urlInput.text.toString().trim().trimEnd('/'))
+                    .putString("ha_url_ext", extUrlInput.text.toString().trim().trimEnd('/'))
                     .apply()
-                Toast.makeText(this@MainActivity, "Адрес сохранён", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Адреса сохранены", Toast.LENGTH_SHORT).show()
             }
+        })
+        pairCard.addView(TextView(this).apply {
+            text = "Второе поле — внешний адрес HA (домен, Nabu Casa, Tailscale). " +
+                "Дома приложение использует локальный адрес, а вне сети " +
+                "автоматически переключается на внешний."
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(0, dp(8), 0, 0)
         })
         if (!hasOverlayPermission()) {
             permBtn = iosButton("Разрешить показ поверх приложений", cOrange).apply {
@@ -384,6 +417,39 @@ class MainActivity : Activity() {
         windowBtn.layoutParams = (windowBtn.layoutParams as LinearLayout.LayoutParams)
             .apply { topMargin = 0 }
         winCard.addView(windowBtn)
+        winCard.addView(TextView(this).apply {
+            text = "ЗВУК ПРИ ПОКАЗЕ ОКНА"
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            letterSpacing = 0.08f
+            setPadding(0, dp(16), 0, 0)
+        })
+        soundText = TextView(this).apply {
+            setTextColor(cLabel)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding(0, dp(4), 0, 0)
+        }
+        updateSoundLabel()
+        winCard.addView(soundText)
+        winCard.addView(iosButton("Выбрать системный звук", cGray).apply {
+            setOnClickListener {
+                val cur = getSharedPreferences("settings", MODE_PRIVATE)
+                    .getString("sound_uri", null)
+                val i = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                    putExtra(
+                        RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION
+                    )
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Звук при показе окна")
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, false)
+                    if (cur != null && cur != "silent")
+                        putExtra(
+                            RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(cur)
+                        )
+                }
+                startActivityForResult(i, REQ_SOUND)
+            }
+        })
         lay.addView(winCard)
 
         lay.addView(footer("MyNotify · Home Assistant"))
@@ -403,6 +469,29 @@ class MainActivity : Activity() {
     }
 
     private val windowHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private fun updateSoundLabel() {
+        val saved = getSharedPreferences("settings", MODE_PRIVATE)
+            .getString("sound_uri", null)
+        soundText.text = when {
+            saved == null -> "Не выбран — окно появляется без звука"
+            saved == "silent" -> "Без звука"
+            else -> try {
+                RingtoneManager.getRingtone(this, Uri.parse(saved))?.getTitle(this)
+                    ?: "Выбран системный звук"
+            } catch (_: Exception) { "Выбран системный звук" }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_SOUND && resultCode == RESULT_OK) {
+            val uri = data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            getSharedPreferences("settings", MODE_PRIVATE).edit()
+                .putString("sound_uri", uri?.toString() ?: "silent").apply()
+            updateSoundLabel()
+        }
+    }
 
     override fun onDestroy() {
         windowHandler.removeCallbacksAndMessages(null)

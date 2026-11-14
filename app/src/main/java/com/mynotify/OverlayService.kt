@@ -8,14 +8,12 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -26,20 +24,15 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import java.io.File
-import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.max
@@ -47,9 +40,10 @@ import org.json.JSONObject
 
 /**
  * Показывает окно с потоком камеры поверх всех приложений.
- * UI окна (панель кнопок + ручка ресайза) появляется по тапу/нажатию кнопки
- * пульта и скрывается через 6 секунд. Кнопки: Закрыть | Во весь экран |
- * Скриншот | Запись. Ресайз — перетаскиванием за правый нижний угол.
+ * UI окна (панель кнопок-иконок + ручка ресайза) появляется по тапу/нажатию
+ * кнопки пульта и скрывается через 6 секунд. Кнопки: Закрыть | Во весь экран.
+ * Кнопки — иконки, размер масштабируется вместе с размером окна.
+ * Ресайз — перетаскиванием за правый нижний угол.
  */
 @androidx.media3.common.util.UnstableApi
 class OverlayService : Service() {
@@ -85,17 +79,14 @@ class OverlayService : Service() {
     private var retries = 0
 
     private var uiBar: LinearLayout? = null
-    private var uiButtons: List<TextView> = emptyList()
+    private var uiIcons: List<ImageButton> = emptyList()
+    private var fsBtn: ImageButton? = null
     private var baseWindowW = 0 // ширина окна при создании — эталон масштаба кнопок
     private var cornerView: View? = null
     private val uiHideRunnable = Runnable { hideUi() }
 
     private var fullscreen = false
     private var savedRect: IntArray? = null // x,y,w,h до полноэкранного режима
-
-    private var recordThread: Thread? = null
-    @Volatile private var recording = false
-    private var recordBtn: TextView? = null
 
     private val hasTouch: Boolean by lazy {
         packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN)
@@ -116,6 +107,17 @@ class OverlayService : Service() {
 
     fun haBase(): String =
         (prefs.getString("ha_url", "http://homeassistant.local:8123") ?: "").trimEnd('/')
+
+    /** Необязательный внешний адрес HA (https-домен/порт). Пусто — только LAN. */
+    fun haExt(): String =
+        (prefs.getString("ha_url_ext", "") ?: "").trim().trimEnd('/')
+
+    /**
+     * Активный базовый адрес: локальный, а если он недоступен (устройство
+     * вне домашней сети) — внешний. Кандидаты перебираются по кругу.
+     */
+    private fun haCandidates(): List<String> =
+        listOf(haBase(), haExt()).filter { it.isNotBlank() }
 
     fun deviceId(): String = prefs.getString("device_id", null)
         ?: UUID.randomUUID().toString().also {
@@ -145,12 +147,18 @@ class OverlayService : Service() {
         if (haThread?.isAlive == true) return
         haThread = Thread {
             var lastReg = 0L
+            var idx = 0 // индекс активного кандидата в haCandidates()
             while (!Thread.currentThread().isInterrupted) {
+                val bases = haCandidates()
+                if (bases.isEmpty()) {
+                    try { Thread.sleep(2000) } catch (_: InterruptedException) { return@Thread }
+                    continue
+                }
+                if (idx >= bases.size) idx = 0
+                val base = bases[idx]
+                var ok = false
                 try {
-                    val base = haBase()
-                    if (base.isNotBlank() &&
-                        System.currentTimeMillis() - lastReg > 10000
-                    ) {
+                    if (System.currentTimeMillis() - lastReg > 10000) {
                         val body = JSONObject()
                             .put("device_id", deviceId())
                             .put("code", pairCode())
@@ -166,7 +174,8 @@ class OverlayService : Service() {
                             null
                         )
                     )
-                    if (resp.optBoolean("ok")) {
+                    ok = resp.optBoolean("ok")
+                    if (ok) {
                         lastHaOk = System.currentTimeMillis()
                         bound = resp.optBoolean("bound")
                         when (resp.optString("cmd")) {
@@ -182,20 +191,19 @@ class OverlayService : Service() {
                                 hideWindow()
                                 startForegroundNotify("Служба работает — окно скрыто")
                             }
-                            "screenshot" -> handler.post {
-                                if (windowShown) takeScreenshot()
-                            }
                             "fullscreen" -> handler.post {
                                 if (windowShown) toggleFullscreen()
-                            }
-                            "record" -> handler.post {
-                                if (windowShown) toggleRecord()
                             }
                         }
                     }
                 } catch (_: Exception) {
                     lastHaOk = 0L
                     bound = false
+                }
+                if (!ok && bases.size > 1) {
+                    // текущий адрес недоступен — пробуем следующий (LAN <-> вне сети)
+                    idx = (idx + 1) % bases.size
+                    lastReg = 0L
                 }
                 try {
                     sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
@@ -262,20 +270,28 @@ class OverlayService : Service() {
         if (root == null) createWindow()
         prefs.edit().putString("url", url).apply()
         startStream(url)
+        playPopupSound()
     }
 
-    /** iOS-капсула для полупрозрачной панели окна. */
-    private fun toolButton(label: String, action: () -> Unit): TextView =
-        TextView(this).apply {
-            text = label
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL))
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(8), dp(16), dp(8))
+    /** Звук из системных рингтонов — играется при показе окна. */
+    private fun playPopupSound() {
+        val saved = prefs.getString("sound_uri", null) ?: return
+        if (saved.isBlank() || saved == "silent") return
+        try {
+            RingtoneManager.getRingtone(applicationContext, Uri.parse(saved))?.play()
+        } catch (_: Exception) {}
+    }
+
+    /** Круглая полупрозрачная кнопка-иконка для панели окна. */
+    private fun iconButton(resIcon: Int, desc: String, action: () -> Unit): ImageButton =
+        ImageButton(this).apply {
+            setImageResource(resIcon)
+            setColorFilter(Color.parseColor("#FFFFFF"))
+            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+            contentDescription = desc
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#B31C1C1E"))
-                cornerRadius = dp(17).toFloat()
+                cornerRadius = dp(22).toFloat()
             }
             isFocusable = !hasTouch
             isClickable = true
@@ -341,13 +357,11 @@ class OverlayService : Service() {
             setBackgroundColor(Color.parseColor("#4D000000"))
             visibility = View.GONE
         }
-        bar.addView(toolButton("Закрыть") { hideWindow() })
-        bar.addView(toolButton("Во весь экран") { toggleFullscreen() })
-        bar.addView(toolButton("Скриншот") { takeScreenshot() })
-        val rec = toolButton("Запись") { toggleRecord() }
-        recordBtn = rec
-        bar.addView(rec)
-        uiButtons = (0 until bar.childCount).mapNotNull { bar.getChildAt(it) as? TextView }
+        bar.addView(iconButton(R.drawable.ic_close, "Закрыть") { hideWindow() })
+        val fs = iconButton(R.drawable.ic_fullscreen, "Во весь экран") { toggleFullscreen() }
+        fsBtn = fs
+        bar.addView(fs)
+        uiIcons = (0 until bar.childCount).mapNotNull { bar.getChildAt(it) as? ImageButton }
         val barLp = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
         barLp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
@@ -382,15 +396,14 @@ class OverlayService : Service() {
 
     private fun hideWindow() {
         windowShown = false
-        recording = false
         handler.removeCallbacksAndMessages(null)
         try { root?.let { wm?.removeView(it) } } catch (_: Exception) {}
         root = null
         playerView = null
         uiBar = null
-        uiButtons = emptyList()
+        uiIcons = emptyList()
+        fsBtn = null
         cornerView = null
-        recordBtn = null
         player?.release()
         player = null
         try {
@@ -412,16 +425,39 @@ class OverlayService : Service() {
         cornerView?.visibility = View.GONE
     }
 
-    /** Кнопки панели масштабируются вместе с размером окна. */
+    /**
+     * Кнопки-иконки масштабируются вместе с размером окна: при маленьком
+     * окне они уменьшаются, чтобы панель влезала целиком.
+     */
     private fun applyUiScale() {
         val w = params?.width ?: return
         if (baseWindowW == 0) return
-        val k = (w.toFloat() / baseWindowW).coerceIn(1f, 3f)
-        for (b in uiButtons) {
-            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f * k)
-            b.setPadding(dpf(14f * k), dpf(8f * k), dpf(14f * k), dpf(8f * k))
+        val k = (w.toFloat() / baseWindowW).coerceIn(0.45f, 3f)
+        val size = dpf((44f * k).coerceIn(26f, 72f))
+        val pad = (size * 0.24f).toInt()
+        for (b in uiIcons) {
+            val lp = b.layoutParams as LinearLayout.LayoutParams
+            lp.width = size; lp.height = size
+            b.layoutParams = lp
+            b.setPadding(pad, pad, pad, pad)
+            (b.background as? GradientDrawable)?.cornerRadius = size / 2f
         }
-        uiBar?.setPadding(dpf(6f * k), dpf(5f * k), dpf(6f * k), dpf(5f * k))
+        uiBar?.apply {
+            val lp = layoutParams
+            lp.height = size + dpf(10f * k)
+            layoutParams = lp
+            setPadding(dpf(8f * k), dpf(5f * k), dpf(8f * k), dpf(5f * k))
+        }
+        (uiBar?.layoutParams as? FrameLayout.LayoutParams)?.let {
+            it.height = size + dpf(10f * k)
+            uiBar?.layoutParams = it
+        }
+        val gap = dpf(6f * k)
+        for (i in 1 until (uiBar?.childCount ?: 0)) {
+            val lp = uiBar!!.getChildAt(i).layoutParams as LinearLayout.LayoutParams
+            lp.marginStart = gap
+            uiBar!!.getChildAt(i).layoutParams = lp
+        }
         cornerView?.let {
             val lp = it.layoutParams
             lp.width = dpf(28f * k); lp.height = dpf(28f * k)
@@ -475,90 +511,15 @@ class OverlayService : Service() {
             }
             fullscreen = false
         }
+        fsBtn?.setImageResource(
+            if (fullscreen) R.drawable.ic_fullscreen_exit else R.drawable.ic_fullscreen
+        )
         wm?.updateViewLayout(root, p)
         applyUiScale()
         cornerView?.visibility =
             if (hasTouch && !fullscreen && uiBar?.visibility == View.VISIBLE)
                 View.VISIBLE else View.GONE
     }
-
-    private fun takeScreenshot() {
-        val v = root ?: return
-        if (v.width == 0 || v.height == 0) return
-        val wasVisible = uiBar?.visibility == View.VISIBLE
-        hideUi() // не снимать саму панель
-        try {
-            val bmp = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
-            v.draw(Canvas(bmp))
-            val dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-            val f = File(dir, "shot_${stamp()}.png")
-            FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            bmp.recycle()
-            flash(Color.parseColor("#66FFFFFF"))
-            startForegroundNotify("Скриншот сохранён: ${f.name}")
-        } catch (e: Exception) {
-            startForegroundNotify("Скриншот не удался: ${e.message}")
-        } finally {
-            if (wasVisible) showUi()
-        }
-    }
-
-    private fun toggleRecord() {
-        if (recording) { recording = false; return }
-        val hls = currentUrl()
-        val mp4 = hls.replace("/api/stream.m3u8", "/api/stream.mp4")
-        if (mp4 == hls) {
-            startForegroundNotify("Запись доступна только для потоков go2rtc (HLS)")
-            return
-        }
-        recording = true
-        recordBtn?.apply { text = "Стоп"; setTextColor(Color.parseColor("#FF453A")) }
-        val f = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "rec_${stamp()}.mp4")
-        val t = Thread {
-            var err: String? = null
-            try {
-                val conn = URL(mp4).openConnection() as HttpURLConnection
-                conn.connectTimeout = 5000
-                conn.readTimeout = 15000
-                conn.inputStream.use { ins ->
-                    FileOutputStream(f).use { out ->
-                        val buf = ByteArray(64 * 1024)
-                        while (recording) {
-                            val n = ins.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                        }
-                    }
-                }
-                conn.disconnect()
-            } catch (e: Exception) {
-                err = e.message
-            }
-            handler.post {
-                recording = false
-                recordBtn?.apply {
-                    text = "Запись"; setTextColor(Color.parseColor("#FFFFFF"))
-                }
-                startForegroundNotify(
-                    if (err != null) "Запись прервана: $err"
-                    else "Видео сохранено: ${f.name} (${f.length() / 1024} КБ)")
-            }
-        }
-        t.isDaemon = true
-        recordThread = t
-        t.start()
-    }
-
-    private fun flash(color: Int) {
-        val v = root ?: return
-        val old = (v.background as? android.graphics.drawable.ColorDrawable)?.color
-            ?: Color.TRANSPARENT
-        v.setBackgroundColor(color)
-        handler.postDelayed({ v.setBackgroundColor(old) }, 120)
-    }
-
-    private fun stamp(): String =
-        SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
     // ---------- управление ----------
 
