@@ -128,14 +128,17 @@ async def async_setup_device(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> tuple[Device, MyNotifyCoordinator]:
     devices = store(hass).setdefault("devices", {})
-    if entry.entry_id in devices:
-        dev = devices[entry.entry_id]
-        return dev, dev.coord
-    coord = MyNotifyCoordinator(hass, entry)
-    await coord.async_config_entry_first_refresh()
-    dev = Device(hass, entry, coord)
-    devices[entry.entry_id] = dev
-    return dev, coord
+    dev = devices.get(entry.entry_id)
+    if dev is None:
+        coord = MyNotifyCoordinator(hass, entry)
+        dev = Device(hass, entry, coord)
+        # ВАЖНО: вставляем в кэш ДО первого await. Платформы (switch/select/
+        # button) ставятся параллельно: без этого каждая создавала свою
+        # копию Device — переключение камеры дёргало один экземпляр, а
+        # сущность «Камера» показывала другой (расхождение списка и показа).
+        devices[entry.entry_id] = dev
+        await coord.async_config_entry_first_refresh()
+    return dev, dev.coord
 
 
 async def async_unload_device(hass: HomeAssistant, entry: ConfigEntry) -> None:

@@ -74,7 +74,17 @@ def build_url(hass: HomeAssistant, stream: str) -> str:
 
 
 def send_command(hass: HomeAssistant, device_id: str, cmd: dict) -> None:
-    store(hass)["queues"].setdefault(device_id, []).append(cmd)
+    queue = store(hass)["queues"].setdefault(device_id, [])
+    now = time.time()
+    cmd = {**cmd, "ts": now}
+    # Окну имеет смысл только ПОСЛЕДНЯЯ команда показа/скрытия и только свежая:
+    # планшет мог спать и проснуться через N минут — старые камеры доедать
+    # уже не надо, иначе окно показывает устаревший выбор пользователя.
+    queue[:] = [
+        c for c in queue
+        if c.get("cmd") not in ("show", "hide") and now - c.get("ts", 0) < 120
+    ]
+    queue.append(cmd)
 
 
 def is_online(hass: HomeAssistant, device_id: str) -> bool:
@@ -146,8 +156,15 @@ class PollView(HomeAssistantView):
         if not bound and st["pending"].get(code, {}).get("device_id") != device_id:
             return self.json({"ok": False})
         st["seen"][device_id] = time.time()
-        queue = st["queues"].get(device_id)
-        cmd = queue.pop(0) if queue else {}
+        queue = st["queues"].get(device_id) or []
+        cmd = {}
+        while queue:
+            c = queue.pop(0)
+            # просроченные show/hide не отдаём: планшет спал — показывать
+            # камеру, выбранную полчаса назад, уже не надо
+            if c.get("cmd") not in ("show", "hide") or time.time() - c.get("ts", 0) < 120:
+                cmd = c
+                break
         return self.json({"ok": True, "bound": bound, **cmd})
 
 

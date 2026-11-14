@@ -1,13 +1,16 @@
 {
   "domain": "mynotify",
   "name": "MyNotify",
-  "codeowners": ["@beemerspb"],
+  "codeowners": [
+    "@beemerspb"
+  ],
   "config_flow": true,
-  "dependencies": ["http"],
+  "dependencies": [
+    "http"
+  ],
   "documentation": "https://github.com/beemerspb/mynotify",
   "issue_tracker": "https://github.com/beemerspb/mynotify/issues",
   "integration_type": "device",
   "iot_class": "local_push",
-  "version": "0.6.6"
+  "version": "0.6.7"
 }
-
