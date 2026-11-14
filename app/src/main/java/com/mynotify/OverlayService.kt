@@ -182,6 +182,15 @@ class OverlayService : Service() {
                                 hideWindow()
                                 startForegroundNotify("Служба работает — окно скрыто")
                             }
+                            "screenshot" -> handler.post {
+                                if (windowShown) takeScreenshot()
+                            }
+                            "fullscreen" -> handler.post {
+                                if (windowShown) toggleFullscreen()
+                            }
+                            "record" -> handler.post {
+                                if (windowShown) toggleRecord()
+                            }
                         }
                     }
                 } catch (_: Exception) {

@@ -12,7 +12,7 @@ show:
       selector:
         entity:
           integration: mynotify
-          domain: humidifier
+          domain: switch
           multiple: true
     stream:
       name: "Камера"
@@ -43,5 +43,5 @@ hide:
       selector:
         entity:
           integration: mynotify
-          domain: humidifier
+          domain: switch
           multiple: true

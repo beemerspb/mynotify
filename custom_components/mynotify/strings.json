@@ -14,11 +14,19 @@
         "data": {
           "code": "Код из приложения"
         }
+      },
+      "reconfigure": {
+        "title": "Настройки MyNotify",
+        "description": "Параметры устройства. Список камер берётся из go2rtc автоматически.",
+        "data": {
+          "go2rtc_url": "URL go2rtc"
+        }
       }
     },
     "error": {
       "code_not_found": "Код не найден. Убедись, что служба MyNotify на устройстве запущена, а адрес HA в приложении указан верно.",
-      "already_configured": "Это устройство уже добавлено."
+      "already_configured": "Это устройство уже добавлено.",
+      "bad_url": "URL должен начинаться с http:// или https://"
     }
   }
 }

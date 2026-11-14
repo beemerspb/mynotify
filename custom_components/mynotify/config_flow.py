@@ -14,6 +14,7 @@ from . import CONF_GO2RTC_URL, DEFAULT_GO2RTC, DOMAIN, ensure_views, store
 
 class MyNotifyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    supports_reconfigure_flow = True
 
     def __init__(self) -> None:
         self._go2rtc = DEFAULT_GO2RTC
@@ -59,5 +60,26 @@ class MyNotifyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="device",
             data_schema=vol.Schema({vol.Required("code"): str}),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(self, user_input=None):
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        errors = {}
+        if user_input is not None:
+            url = user_input[CONF_GO2RTC_URL].strip().rstrip("/")
+            if not url.startswith(("http://", "https://")):
+                errors["base"] = "bad_url"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_GO2RTC_URL: url}
+                )
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_abort(reason="reconfigure_successful")
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_GO2RTC_URL, default=entry.data[CONF_GO2RTC_URL]): str}
+            ),
             errors=errors,
         )

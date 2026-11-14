@@ -4,8 +4,9 @@
 САМО: фоновая служба в приложении регистрируется по 6-значному коду и
 опрашивает очередь команд. Никакого ADB/androidtv_remote не нужно.
 
-Каждое устройство = одна запись конфигурации и одна сущность
-«Камера поверх экрана» (тумблер окна + выбор камеры go2rtc в more-info).
+Каждое устройство = одна запись конфигурации и один блок устройств
+(HA-устройство) с сущностями: выключатель показа окна, список камер,
+кнопки скриншота / полного экрана / записи.
 
 Сервисы mynotify.show / mynotify.hide — для автоматизаций.
 """
@@ -26,7 +27,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "mynotify"
-PLATFORMS = ["humidifier"]
+PLATFORMS = ["switch", "select", "button"]
 
 CONF_GO2RTC_URL = "go2rtc_url"
 CONF_TARGET = "target"
@@ -213,4 +214,5 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     store(hass)["entries"].pop(entry.entry_id, None)
+    store(hass).get("devices", {}).pop(entry.entry_id, None)
     return unloaded
