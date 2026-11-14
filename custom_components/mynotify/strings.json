@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MyNotify",
+        "description": "Адрес go2rtc для построения ссылок на потоки камер.",
+        "data": {
+          "go2rtc_url": "URL go2rtc"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+# MyNotify
+
+Камера поверх любого экрана: Android-приложение (телефон/планшет/Android TV)
+показывает плавающее окно с живым потоком go2rtc поверх YouTube и всего
+остального. Управляет Home Assistant.
+
+[![добавить в Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=beemerspb&repository=mynotify&category=integration)
+
+## Как это устроено
+
+- Приложение на Android — только служба: выдал один раз разрешение
+  «поверх приложений» — и всё. UI окна появляется по тапу (панель:
+  Закрыть / Во весь экран / Скриншот / Запись видео), скрывается через 6 с;
+  ресайз — перетаскивание за правый нижний угол.
+- HA-интеграция `mynotify` создаёт одну сущность «Камера поверх экрана»
+  на каждое Android-устройство (androidtv_remote). Открываешь сущность —
+  там тумблер показа/скрытия окна и выпадающий список камер (список
+  тянется живьём из go2rtc).
+- Для автоматизаций — сервисы `mynotify.show` / `mynotify.hide`
+  (target/stream/autohide), примеры в deploy/ha-integration.md.
+- Обязательное условие: устройство-приёмник добавлено в HA как
+  «Android TV Remote Device» (Настройки → Устройства и сервисы →
+  Добавить интеграцию → Android TV Remote Device; на устройстве
+  включить беспроводную отладку). Без этого команде некуда прилетать.
+
+## Установка интеграции в Home Assistant
+
+### Вариант 1 — Marketplace / HACS (рекомендуется)
+
+Ссылка для добавления репозитория:
+
+    https://github.com/beemerspb/mynotify
+
+- HA 2026.11+: Настройки → Marketplace → «Добавить по ссылке» → вставить
+  ссылку → установить. Требует публичный репозиторий (подключение GitHub
+  в Marketplace читает только публичные репо).
+- HA до 2026.11 (HACS): HACS → ⋮ → «Пользовательские репозитории» →
+  добавить ссылку, категория «Интеграции» → установить.
+- После установки: [добавить интеграцию](https://my.home-assistant.io/redirect/config_flow_start/?domain=mynotify)
+  (Настройки → Устройства и сервисы → Добавить интеграцию → MyNotify,
+  указать адрес go2rtc). На 2026.11+ интеграция открывается сама сразу
+  после установки.
+
+### Вариант 2 — вручную
+
+Скопировать `custom_components/mynotify/` в `/config/custom_components/mynotify/`
+на хосте HA и перезапустить Home Assistant.
+
+## Установка приложения
+
+APK: релизы репозитория или сборка из исходников
+(`ANDROID_HOME=~/android-sdk gradle assembleDebug`).
+Поставить на устройство, открыть, выдать разрешение «Поверх приложений».
+
+## Структура
+
+- `app/` — Android-приложение (Kotlin, media3/ExoPlayer, minSdk 21)
+- `custom_components/mynotify/` — HA-интеграция (ставится в custom_components)
+- `deploy/ha-integration.md` — примеры автоматизаций и заметки
+- `deploy.sh` — раскатка интеграции на мой HA-хост по ssh
+
+## Версионирование
+
+Любое изменение = bump версии: `versionCode`/`versionName` в
+app/build.gradle.kts и `version` в custom_components/mynotify/manifest.json.

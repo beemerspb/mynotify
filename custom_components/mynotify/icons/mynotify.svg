@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- монитор/экран -->
+  <rect x="2" y="4" width="20" height="13" rx="2"/>
+  <path d="M9 21h6M12 17v4"/>
+  <!-- камера поверх экрана -->
+  <circle cx="12" cy="10.5" r="3.2"/>
+  <path d="M10.2 7.8 11 6.5h2l.8 1.3"/>
+</svg>

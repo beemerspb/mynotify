@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.CamOverlay" parent="android:Theme.Material.NoActionBar" />
+</resources>
