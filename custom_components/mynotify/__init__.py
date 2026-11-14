@@ -5,15 +5,19 @@
 опрашивает очередь команд. Никакого ADB/androidtv_remote не нужно.
 
 Каждое устройство = одна запись конфигурации и один блок устройств
-(HA-устройство) с сущностями: выключатель показа окна, список камер,
-кнопки скриншота / полного экрана / записи.
+(HA-устройство) с сущностями: выключатель показа окна, список камер.
 
 Сервисы mynotify.show / mynotify.hide — для автоматизаций.
+
+Если устройство вне домашней сети, оно обращается к HA по внешнему
+адресу; поток для него проксируется через HA (/api/mynotify/stream) —
+наружу не отдаётся ничего, кроме того, что видно в самом HA.
 """
 from __future__ import annotations
 
 import logging
 import time
+from urllib.parse import quote, urljoin
 
 import voluptuous as vol
 from aiohttp import web
@@ -27,7 +31,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "mynotify"
-PLATFORMS = ["switch", "select", "button"]
+PLATFORMS = ["switch", "select"]
 
 CONF_GO2RTC_URL = "go2rtc_url"
 CONF_TARGET = "target"
@@ -71,6 +75,57 @@ def build_url(hass: HomeAssistant, stream: str) -> str:
     if stream.startswith(("http://", "https://")):
         return stream
     return f"{base_url(hass)}/api/stream.m3u8?src={stream}"
+
+
+def _proxied(abs_url: str, device: str, code: str) -> str:
+    """Ссылка на ресурс go2rtc через прокси HA (относительная — работает
+    и из локальной сети, и по внешнему адресу HA)."""
+    return (
+        "/api/mynotify/stream"
+        f"?device={quote(device, safe='')}"
+        f"&code={quote(code, safe='')}"
+        f"&u={quote(abs_url, safe='')}"
+    )
+
+
+def stream_path(hass: HomeAssistant, device_id: str, code: str, stream: str) -> str:
+    """Относительный путь прокси для HLS-манифеста потока (пусто, если
+    stream — уже готовый внешний URL: его проксировать нельзя)."""
+    if stream.startswith(("http://", "https://")):
+        return ""
+    return _proxied(build_url(hass, stream), device_id, code)
+
+
+def rewrite_manifest(
+    text: str, manifest_url: str, device: str, code: str, allowed_prefix: str
+) -> str:
+    """Переписывает ссылки манифеста HLS на прокси HA.
+
+    allowed_prefix — базовый URL локального go2rtc: проксируются только
+    ресурсы из него (защита от SSRF), остальное остаётся как есть.
+    """
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if s and not s.startswith("#"):
+            absu = urljoin(manifest_url, s)
+            out.append(
+                _proxied(absu, device, code)
+                if absu.startswith(allowed_prefix + "/")
+                else line
+            )
+        elif s.startswith('#EXT-X-MAP:URI="'):
+            head, _, rest = s.partition('"')
+            uri, _, tail = rest.partition('"')
+            absu = urljoin(manifest_url, uri)
+            out.append(
+                f'{head}"{_proxied(absu, device, code)}"{tail}'
+                if absu.startswith(allowed_prefix + "/")
+                else line
+            )
+        else:
+            out.append(line)
+    return "\n".join(out) + "\n"
 
 
 def send_command(hass: HomeAssistant, device_id: str, cmd: dict) -> None:
@@ -168,6 +223,63 @@ class PollView(HomeAssistantView):
         return self.json({"ok": True, "bound": bound, **cmd})
 
 
+class StreamView(HomeAssistantView):
+    """GET /api/mynotify/stream — прокси go2rtc через HA.
+
+    Устройство вне домашней сети видит только HA, поэтому HLS-сегменты
+    идут тем же каналом, что и API. Доступ — по той же паре device+code,
+    что и для poll; наружу проксируются только URL локального go2rtc.
+    """
+
+    url = "/api/mynotify/stream"
+    url_path = "/api/mynotify/stream"
+    name = "api:mynotify:stream"
+    requires_auth = False
+
+    async def get(self, request: web.Request) -> web.StreamResponse:
+        hass = request.app["hass"]
+        device = request.query.get("device", "")
+        code = request.query.get("code", "")
+        st = store(hass)
+        if not any(
+            e.data.get("device_id") == device and e.data.get("device_code") == code
+            for e in st["entries"].values()
+        ):
+            return self.json({"ok": False, "error": "unauthorized"}, status=401)
+        u = request.query.get("u", "")
+        base = base_url(hass)
+        if not u.startswith(base + "/"):
+            return self.json({"ok": False, "error": "forbidden"}, status=403)
+        headers = {}
+        if "Range" in request.headers:
+            headers["Range"] = request.headers["Range"]
+        session = async_get_clientsession(hass)
+        try:
+            async with session.get(u, headers=headers) as up:
+                ctype = up.headers.get("Content-Type", "")
+                if "mpegurl" in ctype or u.split("?", 1)[0].endswith(".m3u8"):
+                    text = await up.text()
+                    body = rewrite_manifest(text, u, device, code, base)
+                    return web.Response(
+                        text=body,
+                        content_type="application/vnd.apple.mpegurl",
+                        status=up.status,
+                    )
+                resp_headers = {"Accept-Ranges": "bytes"}
+                for h in ("Content-Type", "Content-Length", "Content-Range"):
+                    if h in up.headers:
+                        resp_headers[h] = up.headers[h]
+                resp = web.StreamResponse(status=up.status, headers=resp_headers)
+                await resp.prepare(request)
+                async for chunk in up.content.iter_any():
+                    await resp.write(chunk)
+                await resp.write_eof()
+                return resp
+        except Exception as err:  # noqa: BLE001 — клиент ушёл/go2rtc лёг
+            _LOGGER.debug("mynotify: стрим-прокси %s: %s", u, err)
+            return self.json({"ok": False, "error": "upstream"}, status=502)
+
+
 def ensure_views(hass: HomeAssistant) -> None:
     """Регистрирует HTTP-эндпоинты приложения.
 
@@ -180,6 +292,7 @@ def ensure_views(hass: HomeAssistant) -> None:
         return
     hass.http.register_view(RegisterView())
     hass.http.register_view(PollView())
+    hass.http.register_view(StreamView())
     st["views"] = True
 
 
