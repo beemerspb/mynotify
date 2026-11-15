@@ -530,7 +530,7 @@ class MainActivity : Activity() {
         })
         val mutePrefs = getSharedPreferences("settings", MODE_PRIVATE)
         val muteCheck = android.widget.CheckBox(this).apply {
-            text = "Заглушать звук при старте окна"
+            text = "Заглушать звук видеопотока при старте"
             setTextColor(cLabel)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding(0, dp(16), 0, 0)
