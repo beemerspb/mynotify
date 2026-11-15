@@ -118,25 +118,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun hasOverlayPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
-        if (Settings.canDrawOverlays(this)) return true
-        // часть TV-прошивок даёт canDrawOverlays=false даже при Allow в
-        // appops — проверяем appops напрямую и по факту успешного показа
-        return try {
-            val aom = getSystemService("appops_service") as android.app.AppOpsManager
-            @Suppress("DEPRECATION")
-            val mode = aom.checkOpNoThrow(
-                "android.system.alert_window",
-                android.os.Process.myUid(), packageName
-            )
-            mode == android.app.AppOpsManager.MODE_ALLOWED
-        } catch (_: Exception) {
-            false
-        } || getSharedPreferences("settings", MODE_PRIVATE)
-            .getBoolean("overlay_ok", false)
-    }
-
     /** Тот же prefs-файл, что у службы: код привязки виден до её запуска. */
     private fun pairCode(): String {
         val p = getSharedPreferences("settings", Context.MODE_PRIVATE)
