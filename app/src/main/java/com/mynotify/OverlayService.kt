@@ -551,13 +551,18 @@ class OverlayService : Service() {
         uiBar?.visibility = View.VISIBLE
         setCornersVisible(if (hasTouch && !fullscreen) View.VISIBLE else View.GONE)
         if (!hasTouch && uiBar?.hasFocus() != true) uiIcons.firstOrNull()?.requestFocus()
+        // Таймер автоскрытия ставится ВСЕГДА. Раньше при фокусе в панели он
+        // не ставился вовсе — на ТВ (фокус берётся автоматически) панель
+        // не скрывалась никогда. Любая клавиша пульта зовёт showUi() и
+        // перезапускает отсчёт, так что при навигации панель не исчезает.
         handler.removeCallbacks(uiHideRunnable)
-        // ТВ: пока фокус внутри панели — не прятать её (иначе фокус теряется)
-        if (uiBar?.hasFocus() != true)
-            handler.postDelayed(uiHideRunnable, UI_TIMEOUT_MS)
+        handler.postDelayed(uiHideRunnable, UI_TIMEOUT_MS)
     }
 
     private fun hideUi() {
+        // снять фокус с кнопки перед скрытием — иначе он «зависает» на
+        // невидимом view и следующая навигация стартует из ниоткуда
+        uiBar?.clearFocus()
         uiBar?.visibility = View.GONE
         setCornersVisible(View.GONE)
     }
@@ -721,9 +726,18 @@ class OverlayService : Service() {
         when (ev.keyCode) {
             KeyEvent.KEYCODE_BACK -> { hideWindow(); return true }
             // ОК: панель скрыта — показать и фокус на первую кнопку;
-            // панель видна — «нажать» сфокусированную кнопку (не перехватываем)
+            // видна без фокуса — вернуть фокус на первую;
+            // видна с фокусом — «нажать» сфокусированную кнопку (не
+            // перехватываем — событие уйдёт в super и кнопка кликнулась)
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
-            KeyEvent.KEYCODE_NUMPAD_ENTER -> return !barWasVisible
+            KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                if (!barWasVisible) return true
+                if (!barHasFocus) {
+                    uiIcons.firstOrNull()?.requestFocus()
+                    return true
+                }
+                return false
+            }
             // стрелки: при видимой панели с фокусом — навигация по кнопкам
             // (системный focus-search), иначе — перемещение окна
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
@@ -832,8 +846,11 @@ class OverlayService : Service() {
         private var intercepting = false
         private var skipThisGesture = false
 
+        // ВАЖНО: invoke() возвращает Boolean, а не Boolean? — «?:» бы не
+        // сработал и необработанные клавиши (ОК по кнопке, стрелки фокуса)
+        // молча проглатывались бы. Явно: не обработали — отдаём системе.
         override fun dispatchKeyEvent(event: KeyEvent): Boolean =
-            keyHandler?.invoke(event) ?: super.dispatchKeyEvent(event)
+            keyHandler?.invoke(event) == true || super.dispatchKeyEvent(event)
 
         override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
             when (ev.action) {
