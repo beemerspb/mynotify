@@ -534,20 +534,20 @@ class OverlayService : Service() {
         } catch (_: Exception) {}
     }
 
-    // ---------- прозрачность (настройки «Окно камеры») ----------
-    //Prefs: win_alpha / video_alpha — проценты прозрачности 0..100,
-    // 0 = как раньше (фон #CC000000, видео полностью видно).
+    // ---------- прозрачность (настройка «Окно камеры») ----------
+    // Prefs: overlay_alpha — процент прозрачности 0..100 на окно и видео
+    // одним ползунком; 0 = как раньше (фон #CC000000, видео полностью видно).
 
-    private fun transparencyPct(key: String): Int =
-        (prefs.getInt(key, 0) ?: 0).coerceIn(0, 100)
+    private fun transparencyPct(): Int =
+        (prefs.getInt("overlay_alpha", 0) ?: 0).coerceIn(0, 100)
 
     /** Множитель альфы 1..0 из процента прозрачности. */
     private fun alphaFromPct(pct: Int): Float = 1f - pct / 100f
 
     private fun windowBgColor(): Int =
-        Color.argb((204 * alphaFromPct(transparencyPct("win_alpha"))).toInt(), 0, 0, 0)
+        Color.argb((204 * alphaFromPct(transparencyPct())).toInt(), 0, 0, 0)
 
-    private fun videoAlpha(): Float = alphaFromPct(transparencyPct("video_alpha"))
+    private fun videoAlpha(): Float = alphaFromPct(transparencyPct())
 
     /** Применить прозрачность к открытому окну (или проигнорировать). */
     private fun applyAlpha() {

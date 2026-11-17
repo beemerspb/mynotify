@@ -545,8 +545,7 @@ class MainActivity : Activity() {
             attachFocusBlink(this, 10)
         }
         winCard.addView(muteCheck)
-        winCard.addView(alphaSlider("Прозрачность окна", "win_alpha"))
-        winCard.addView(alphaSlider("Прозрачность видео", "video_alpha"))
+        winCard.addView(alphaSlider("Прозрачность (окно и видео)", "overlay_alpha"))
         lay.addView(winCard)
 
         // --- Секция «Приложение»: версия и встроенное обновление ---
