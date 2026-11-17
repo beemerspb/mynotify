@@ -11,12 +11,7 @@ import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
-import android.media.AudioManager
 import android.media.RingtoneManager
-import android.media.session.MediaController
-import android.media.session.MediaSession
-import android.media.session.MediaSessionManager
-import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -108,129 +103,6 @@ class OverlayService : Service() {
 
     private var fullscreen = false
     private var savedRect: IntArray? = null // x,y,w,h до полноэкранного режима
-
-    // ---------- пауза внешнего видео (кино) при появлении окна ----------
-    // Prefs: pause_media_on_show (bool, default true).
-    // Логика: при появлении окна останавливаем то, что сейчас играет
-    // (видеоплеер на ТВ/телефоне), при закрытии окна — запускаем обратно.
-    // Два пути:
-    //  1) MediaSession — если система делится списком сессий, берём ту,
-    //     что играет, и ставим её на паузу точечно (потом и снимаем её же).
-    //  2) Системный медиа-ключ (KEYCODE_MEDIA_PAUSE) — работает всегда,
-    //     система сама выбирает сессию, которая сейчас играет. Это
-    //     основной путь: на Android 11+ список чужих сессий закрыт.
-    // Не все потоки умеют паузу (прямые эфиры) — там команда просто
-    // ни на что не действует.
-
-    private var pausedController: MediaController? = null
-    private var pausedByUs = false
-    private var pausedViaKey = false
-    private var sessionsVisible = false
-
-    private fun pauseMediaEnabled(): Boolean =
-        prefs.getBoolean("pause_media_on_show", true)
-
-    /** Список активных медиасессий (пустой, если система не делится). */
-    private fun activeSessions(): List<MediaController> = try {
-        val msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-        msm.getActiveSessions(null)
-    } catch (_: Exception) {
-        emptyList()
-    }
-
-    /** Играет ли сейчас что-то (признак наличия «кино»). */
-    @Suppress("DEPRECATION")
-    private fun somethingIsPlaying(): Boolean = try {
-        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        am.isMusicActive
-    } catch (_: Exception) {
-        false
-    }
-
-    /**
-     * Поставить внешнее видео на паузу (если оно играет и умеет паузу).
-     *
-     * Правила (проверено по AOSP 14):
-     *  - MediaSessionManager.getActiveSessions(null) на Android 11+ кидает
-     *    SecurityException: список чужих сессий обычному приложению закрыт.
-     *    Там, где список доступен (Android ≤10, ТВ), работает точный путь:
-     *    ставим на паузу конкретную сессию и её же потом запускаем.
-     *  - Системный медиа-ключ (KEYCODE_MEDIA_PAUSE) работает без прав и
-     *    всегда попадает в сессию, которая сейчас играет. Это fallback.
-     *  - Если видно играющую сессию, но в ней нет ACTION_PAUSE — это прямой
-     *    эфир: паузы не существует, не трогаем ничего.
-     */
-    private fun maybePauseExternalMedia() {
-        if (!pauseMediaEnabled() || pausedByUs) return
-        // 1) список сессий (если система его даёт)
-        val sessions = activeSessions()
-        sessionsVisible = sessions.isNotEmpty()
-        if (sessionsVisible) {
-            val playing = sessions.firstOrNull { c ->
-                val st = c.playbackState
-                st != null && st.state == PlaybackState.STATE_PLAYING
-            }
-            if (playing != null) {
-                val actions = playing.playbackState?.actions ?: 0L
-                if ((actions and PlaybackState.ACTION_PAUSE) == 0L) {
-                    // прямой эфир — паузы не бывает
-                    return
-                }
-                try {
-                    playing.transportControls.pause()
-                    pausedController = playing
-                    pausedByUs = true
-                    pausedViaKey = false
-                    return
-                } catch (_: Exception) {
-                    // Android 11+: чужими сессиями управлять нельзя —
-                    // уходим на медиа-ключ
-                }
-            } else {
-                // сессии видны, но ничего не играет — не трогаем
-                return
-            }
-        }
-        // 2) список закрыт (Android 11+) — работаем через медиа-ключ.
-        // Отправляем только если что-то реально играет (STREAM_MUSIC активен):
-        // иначе можно было бы потом запустить то, что юзер сам поставил
-        // на паузу.
-        if (!somethingIsPlaying()) return
-        dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
-        pausedByUs = true
-        pausedViaKey = true
-    }
-
-    /** Вернуть внешнее видео из паузы (только если мы сами его ставили). */
-    private fun resumeExternalMedia() {
-        if (!pausedByUs) return
-        pausedByUs = false
-        val ctrl = pausedController
-        pausedController = null
-        if (ctrl != null) {
-            // точно знаем, какую сессию остановили — её и запускаем
-            try {
-                ctrl.transportControls.play()
-            } catch (_: Exception) {}
-            return
-        }
-        // медиа-ключом: продолжаем только если пауза точно сработала.
-        // Иначе можно запустить то, что пользователь поставил на паузу сам.
-        if (pausedViaKey) {
-            pausedViaKey = false
-            dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-        }
-    }
-
-    /** Системный медиа-ключ (пауза/воспроизведение) — работает без прав. */
-    private fun dispatchMediaKey(code: Int) {
-        try {
-            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val now = System.currentTimeMillis()
-            am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-            am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0))
-        } catch (_: Exception) {}
-    }
 
     // ---------- пауза службы (окна не показываются заданное время) ----------
 
@@ -534,8 +406,6 @@ class OverlayService : Service() {
         if (root == null) createWindow()
         startStream(url)
         playPopupSound()
-        // окно появилось — ставим «кино» на паузу (если оно играет)
-        maybePauseExternalMedia()
     }
 
     /**
@@ -826,8 +696,6 @@ class OverlayService : Service() {
         pausePicker = null
         player?.release()
         player = null
-        // окно закрылось — возвращаем «кино» из паузы
-        resumeExternalMedia()
         try {
             sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
         } catch (_: Exception) {}
@@ -1061,15 +929,56 @@ class OverlayService : Service() {
 
     // ---------- плеер ----------
 
-    private fun startStream(url: String) {
-        player?.release()
+    /**
+     * Если железный AVC-декодер на ТВ занят другим приложением (например,
+     * идёт фильм), его не удаётся инициализировать — плеер падает с
+     * ERROR_CODE_DECODER_INIT_FAILED и окно остаётся чёрным. На многих ТВ
+     * железный AVC-декодер один (concurrent-instances=1), поэтому нужен
+     * запасной путь: media3 умеет откатиться на следующий декодер из списка
+     * (в т.ч. на программный OMX.google.h264.decoder, у него лимита нет).
+     */
+    private var preferSoftwareDecoder = false
+
+    private fun buildPlayer(): ExoPlayer {
         // Буферизация для живого HLS с короткими (0.5 c) сегментами go2rtc:
         // иначе каждый стык сегмента = приседание звука
         val load = androidx.media3.exoplayer.DefaultLoadControl.Builder()
             .setBufferDurationsMs(10_000, 30_000, 1_500, 2_000)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
-        val ex = ExoPlayer.Builder(this).setLoadControl(load).build()
+        val factory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
+            // пробовать следующий декодер, если текущий не инициализировался
+            .setEnableDecoderFallback(true)
+        if (preferSoftwareDecoder) {
+            // последний рубеж: софтовый декодер (медленнее, зато всегда есть)
+            factory.setMediaCodecSelector(SoftwareFirstCodecSelector)
+        }
+        return ExoPlayer.Builder(this)
+            .setRenderersFactory(factory)
+            .setLoadControl(load)
+            .build()
+    }
+
+    /** Декодеры по MIME: сначала программные, потом остальные. */
+    private object SoftwareFirstCodecSelector :
+        androidx.media3.exoplayer.mediacodec.MediaCodecSelector {
+        override fun getDecoderInfos(
+            mimeType: String,
+            requiresSecureDecoder: Boolean,
+            requiresTunnelingDecoder: Boolean
+        ): List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> {
+            val all = androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(
+                mimeType,
+                requiresSecureDecoder,
+                requiresTunnelingDecoder
+            )
+            return all.sortedByDescending { it.softwareOnly }
+        }
+    }
+
+    private fun startStream(url: String) {
+        player?.release()
+        val ex = buildPlayer()
         player = ex
         playerView?.player = ex
         // «Mute при старте» из настроек: окно может открываться без звука,
@@ -1083,6 +992,18 @@ class OverlayService : Service() {
         }
         ex.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
+                // Железный AVC-декодер на ТВ один (concurrent-instances=1) и
+                // может быть занят другим приложением (например, фильмом).
+                // Тогда init падает с DECODER_INIT_FAILED. media3 уже пробует
+                // следующий декодер сам; если не помогло — пересобираем плеер
+                // с приоритетом программного декодера (лимита на него нет).
+                if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED &&
+                    !preferSoftwareDecoder
+                ) {
+                    preferSoftwareDecoder = true
+                    handler.post { restartStream(currentUrl()) }
+                    return
+                }
                 handler.post {
                     playerErrText?.visibility = View.VISIBLE
                     playerErrText?.text =
@@ -1107,6 +1028,16 @@ class OverlayService : Service() {
         ex.playWhenReady = true
         ex.prepare()
         retries = 0
+    }
+
+    /**
+     * Пересобрать плеер (например, после смены приоритета декодеров) и
+     * запустить поток заново.
+     */
+    private fun restartStream(url: String) {
+        try {
+            startStream(url)
+        } catch (_: Exception) {}
     }
 
     /**

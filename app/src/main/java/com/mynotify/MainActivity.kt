@@ -574,30 +574,6 @@ class MainActivity : Activity() {
             attachFocusBlink(this, 10)
         }
         winCard.addView(hideUiCheck)
-        val pauseMediaCheck = android.widget.CheckBox(this).apply {
-            text = "Ставить видео на паузу при появлении окна"
-            setTextColor(cLabel)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            setPadding(0, dp(16), 0, 0)
-            setButtonTintList(
-                android.content.res.ColorStateList.valueOf(cBlue)
-            )
-            isChecked = mutePrefs.getBoolean("pause_media_on_show", true)
-            setOnCheckedChangeListener { _, checked ->
-                mutePrefs.edit().putBoolean("pause_media_on_show", checked).apply()
-            }
-            attachFocusBlink(this, 10)
-        }
-        winCard.addView(pauseMediaCheck)
-        winCard.addView(TextView(this).apply {
-            text = "Когда окно камеры появляется, видео, которое сейчас играет " +
-                "(например, кино на ТВ), ставится на паузу. При закрытии окна " +
-                "снова запускается. Не все потоки умеют паузу — прямые эфиры " +
-                "останутся играть."
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(0, dp(6), 0, 0)
-        })
         lay.addView(winCard)
 
         // --- Секция «Пауза службы»: окна не появляются заданное время ---
