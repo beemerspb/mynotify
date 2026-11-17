@@ -57,6 +57,8 @@ class OverlayService : Service() {
         const val ACTION_STATE = "com.mynotify.action.STATE"
         /** Переприменить прозрачность окна/видео после правки в настройках. */
         const val ACTION_ALPHA = "com.mynotify.action.ALPHA"
+        /** Переприменить настройку показа кнопок в окне (живое применение). */
+        const val ACTION_UI = "com.mynotify.action.UI"
         const val EXTRA_URL = "url"
         const val EXTRA_AUTOHIDE_SEC = "autohide_sec"
         const val DEFAULT_URL =
@@ -272,6 +274,14 @@ class OverlayService : Service() {
                 )
                 handler.post { applyAlpha() }
             }
+            ACTION_UI -> {
+                // опцию «не показывать кнопки» переключили, пока окно открыто
+                startForegroundNotify(
+                    if (windowShown) "Камера поверх экрана"
+                    else "Служба работает — окно скрыто"
+                )
+                handler.post { applyUiVisibility() }
+            }
             ACTION_SHOW -> {
                 startForegroundNotify("Камера поверх экрана")
                 val url = intent.getStringExtra(EXTRA_URL)?.takeIf { it.isNotBlank() }
@@ -445,6 +455,12 @@ class OverlayService : Service() {
         val pv = android.view.LayoutInflater.from(this)
             .inflate(R.layout.player_view_overlay, container, false) as PlayerView
         pv.setOnClickListener { showUi() }
+        // при выключенных кнопках обычный тап ничего не делает —
+        // долгий тап принудительно показывает панель
+        pv.setOnLongClickListener {
+            showUi(force = true)
+            true
+        }
         pv.alpha = videoAlpha()
         playerView = pv
         container.addView(pv, FrameLayout.LayoutParams(
@@ -555,6 +571,23 @@ class OverlayService : Service() {
         playerView?.alpha = videoAlpha()
     }
 
+    // ---------- показ кнопок в окне ----------
+    // Prefs: hide_ui_buttons — не показывать панель кнопок в окне.
+    // Кнопки тогда всё равно доступны: ОК с пульта (или долгий тап) —
+    // принудительно показывает панель, BACK — закрывает окно.
+
+    private fun uiHidden(): Boolean =
+        prefs.getBoolean("hide_ui_buttons", false)
+
+    /** Применить настройку «не показывать кнопки» к открытому окну. */
+    private fun applyUiVisibility() {
+        if (uiHidden()) {
+            hideUi()
+        } else if (windowShown) {
+            showUi(force = true)
+        }
+    }
+
     private fun hideWindow() {
         windowShown = false
         handler.removeCallbacksAndMessages(null)
@@ -579,7 +612,14 @@ class OverlayService : Service() {
         cornerViews.forEach { it.visibility = v }
     }
 
-    private fun showUi() {
+    private fun showUi(force: Boolean = false) {
+        // кнопки скрыты настройкой «не показывать кнопки» — панель не
+        // показываем по тапу/стрелкам, только принудительно (ОК с пульта)
+        if (uiHidden() && !force) {
+            uiBar?.visibility = View.GONE
+            setCornersVisible(View.GONE)
+            return
+        }
         uiBar?.visibility = View.VISIBLE
         setCornersVisible(if (hasTouch && !fullscreen) View.VISIBLE else View.GONE)
         if (!hasTouch && uiBar?.hasFocus() != true) uiIcons.firstOrNull()?.requestFocus()
@@ -752,7 +792,9 @@ class OverlayService : Service() {
         if (ev.action != KeyEvent.ACTION_DOWN) return false
         val barWasVisible = uiBar?.visibility == View.VISIBLE
         val barHasFocus = uiBar?.hasFocus() == true
-        showUi() // любая кнопка пульта показывает панель
+        // любая кнопка пульта показывает панель — но если в настройках
+        // выбрано «не показывать кнопки», панель появляется только по ОК
+        if (!uiHidden()) showUi()
         val p = params ?: return false
         val step = dp(24)
         when (ev.keyCode) {
@@ -763,7 +805,12 @@ class OverlayService : Service() {
             // перехватываем — событие уйдёт в super и кнопка кликнулась)
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
             KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                if (!barWasVisible) return true
+                if (!barWasVisible) {
+                    // при выключенных кнопках ОК — единственный способ
+                    // достать панель (BACK при этом закрывает окно)
+                    if (uiHidden()) showUi(force = true)
+                    return true
+                }
                 if (!barHasFocus) {
                     uiIcons.firstOrNull()?.requestFocus()
                     return true

@@ -546,6 +546,27 @@ class MainActivity : Activity() {
         }
         winCard.addView(muteCheck)
         winCard.addView(alphaSlider("Прозрачность (окно и видео)", "overlay_alpha"))
+        val hideUiCheck = android.widget.CheckBox(this).apply {
+            text = "Не показывать кнопки в окне камеры"
+            setTextColor(cLabel)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding(0, dp(16), 0, 0)
+            setButtonTintList(
+                android.content.res.ColorStateList.valueOf(cBlue)
+            )
+            isChecked = mutePrefs.getBoolean("hide_ui_buttons", false)
+            setOnCheckedChangeListener { _, checked ->
+                mutePrefs.edit().putBoolean("hide_ui_buttons", checked).apply()
+                // применить на лету, если окно уже открыто
+                if (OverlayService.running) {
+                    try {
+                        sendToService(OverlayService.ACTION_UI)
+                    } catch (_: Exception) {}
+                }
+            }
+            attachFocusBlink(this, 10)
+        }
+        winCard.addView(hideUiCheck)
         lay.addView(winCard)
 
         // --- Секция «Приложение»: версия и встроенное обновление ---
