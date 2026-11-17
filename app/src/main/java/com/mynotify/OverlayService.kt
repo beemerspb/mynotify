@@ -14,6 +14,7 @@ import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
@@ -108,47 +109,93 @@ class OverlayService : Service() {
     private var fullscreen = false
     private var savedRect: IntArray? = null // x,y,w,h до полноэкранного режима
 
-    // ---------- пауза внешнего видео (кино) при показе окна ----------
+    // ---------- пауза внешнего видео (кино) при появлении окна ----------
     // Prefs: pause_media_on_show (bool, default true).
     // Логика: при появлении окна останавливаем то, что сейчас играет
     // (видеоплеер на ТВ/телефоне), при закрытии окна — запускаем обратно.
-    // Не все потоки умеют паузу (прямые эфиры), поэтому сначала смотрим
-    // MediaSession: если играющей сессии с ACTION_PAUSE нет — не трогаем.
+    // Два пути:
+    //  1) MediaSession — если система делится списком сессий, берём ту,
+    //     что играет, и ставим её на паузу точечно (потом и снимаем её же).
+    //  2) Системный медиа-ключ (KEYCODE_MEDIA_PAUSE) — работает всегда,
+    //     система сама выбирает сессию, которая сейчас играет. Это
+    //     основной путь: на Android 11+ список чужих сессий закрыт.
+    // Не все потоки умеют паузу (прямые эфиры) — там команда просто
+    // ни на что не действует.
 
     private var pausedController: MediaController? = null
     private var pausedByUs = false
     private var pausedViaKey = false
-    private var pausePicker: LinearLayout? = null
+    private var sessionsVisible = false
 
     private fun pauseMediaEnabled(): Boolean =
         prefs.getBoolean("pause_media_on_show", true)
 
-    /** Поставить внешнее видео на паузу (если оно играет и умеет паузу). */
+    /** Список активных медиасессий (пустой, если система не делится). */
+    private fun activeSessions(): List<MediaController> = try {
+        val msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        msm.getActiveSessions(null)
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /** Играет ли сейчас что-то (признак наличия «кино»). */
+    @Suppress("DEPRECATION")
+    private fun somethingIsPlaying(): Boolean = try {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        am.isMusicActive
+    } catch (_: Exception) {
+        false
+    }
+
+    /**
+     * Поставить внешнее видео на паузу (если оно играет и умеет паузу).
+     *
+     * Правила (проверено по AOSP 14):
+     *  - MediaSessionManager.getActiveSessions(null) на Android 11+ кидает
+     *    SecurityException: список чужих сессий обычному приложению закрыт.
+     *    Там, где список доступен (Android ≤10, ТВ), работает точный путь:
+     *    ставим на паузу конкретную сессию и её же потом запускаем.
+     *  - Системный медиа-ключ (KEYCODE_MEDIA_PAUSE) работает без прав и
+     *    всегда попадает в сессию, которая сейчас играет. Это fallback.
+     *  - Если видно играющую сессию, но в ней нет ACTION_PAUSE — это прямой
+     *    эфир: паузы не существует, не трогаем ничего.
+     */
     private fun maybePauseExternalMedia() {
         if (!pauseMediaEnabled() || pausedByUs) return
-        // 1) MediaSession — видно только если система делится списком сессий
-        try {
-            val msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-            val sessions = msm.getActiveSessions(null)
-            val playing = sessions.firstOrNull { s ->
-                val st = s.playbackState
-                st != null &&
-                    st.state == PlaybackState.STATE_PLAYING &&
-                    (st.actions and PlaybackState.ACTION_PAUSE) != 0L
+        // 1) список сессий (если система его даёт)
+        val sessions = activeSessions()
+        sessionsVisible = sessions.isNotEmpty()
+        if (sessionsVisible) {
+            val playing = sessions.firstOrNull { c ->
+                val st = c.playbackState
+                st != null && st.state == PlaybackState.STATE_PLAYING
             }
             if (playing != null) {
-                val ctrl = MediaController(this, playing.sessionToken)
-                ctrl.transportControls.pause()
-                pausedController = ctrl
-                pausedByUs = true
+                val actions = playing.playbackState?.actions ?: 0L
+                if ((actions and PlaybackState.ACTION_PAUSE) == 0L) {
+                    // прямой эфир — паузы не бывает
+                    return
+                }
+                try {
+                    playing.transportControls.pause()
+                    pausedController = playing
+                    pausedByUs = true
+                    pausedViaKey = false
+                    return
+                } catch (_: Exception) {
+                    // Android 11+: чужими сессиями управлять нельзя —
+                    // уходим на медиа-ключ
+                }
+            } else {
+                // сессии видны, но ничего не играет — не трогаем
                 return
             }
-            // сессии есть, но ни одна не играет — трогать нечего
-            if (sessions.isNotEmpty()) return
-        } catch (_: Exception) {
-            // список сессий недоступен — пробуем системный медиа-ключ
         }
-        // 2) медиа-ключ: система сама выберет сессию, которая сейчас играет
+        // 2) список закрыт (Android 11+) — работаем через медиа-ключ.
+        // Отправляем только если что-то реально играет (STREAM_MUSIC активен):
+        // иначе можно было бы потом запустить то, что юзер сам поставил
+        // на паузу.
+        if (!somethingIsPlaying()) return
         dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
         pausedByUs = true
         pausedViaKey = true
@@ -164,8 +211,8 @@ class OverlayService : Service() {
             // точно знаем, какую сессию остановили — её и запускаем
             try {
                 ctrl.transportControls.play()
-                return
             } catch (_: Exception) {}
+            return
         }
         // медиа-ключом: продолжаем только если пауза точно сработала.
         // Иначе можно запустить то, что пользователь поставил на паузу сам.
@@ -625,7 +672,11 @@ class OverlayService : Service() {
 
         val pv = android.view.LayoutInflater.from(this)
             .inflate(R.layout.player_view_overlay, container, false) as PlayerView
-        pv.setOnClickListener { showUi() }
+        pv.setOnClickListener {
+            // тап по видео закрывает открытый список сроков
+            hideSuspendPicker()
+            showUi()
+        }
         // при выключенных кнопках обычный тап ничего не делает —
         // долгий тап принудительно показывает панель
         pv.setOnLongClickListener {
@@ -799,9 +850,8 @@ class OverlayService : Service() {
         uiBar?.visibility = View.VISIBLE
         setCornersVisible(if (hasTouch && !fullscreen) View.VISIBLE else View.GONE)
         // фокус с пульта нельзя перехватывать, пока он в списке паузы
-        if (!hasTouch && uiBar?.hasFocus() != true &&
-            pausePicker?.hasFocus() != true
-        ) {
+        val pickerFocused = pausePicker?.hasFocus() == true
+        if (!hasTouch && !pickerFocused && uiBar?.hasFocus() != true) {
             uiIcons.firstOrNull()?.requestFocus()
         }
         // Таймер автоскрытия ставится ВСЕГДА. Раньше при фокусе в панели он
@@ -823,29 +873,48 @@ class OverlayService : Service() {
     // ---------- выбор паузы прямо в окне ----------
     // Небольшая панель со сроками: 5/10/15/30/60/120 минут. Работает и
     // с тапом, и с пульта (кнопки фокусируемые).
+    // ВАЖНО: оверлей перехватывает D-pad под перемещение окна, поэтому
+    // навигацию по списку делаем сами (movePicker/selectPicker) и рисуем
+    // свой акцент — системный фокус в оверлее ненадёжен.
 
     private val suspendOptions = listOf(
         5 to "5 минут", 10 to "10 минут", 15 to "15 минут",
         30 to "30 минут", 60 to "1 час", 120 to "2 часа"
     )
 
+    private var pickerItems: List<TextView> = emptyList()
+    private var pickerIndex = 0
+    private var pickerScroll: android.widget.ScrollView? = null
+    private var pausePicker: View? = null
+
     private fun showSuspendPicker() {
         if (root == null) return
+        // старый список убираем, чтобы не наслаивать два
+        pausePicker?.let { p ->
+            (p.parent as? android.view.ViewGroup)?.removeView(p)
+        }
         // список строим заново — в нём есть пункт «Снять паузу»,
         // который зависит от текущего состояния
-        val picker = buildSuspendPicker()
-        pausePicker = picker
+        val box = buildSuspendPicker()
+        val scroll = android.widget.ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor("#CC1C1C1E"))
+            isFillViewport = true
+            addView(box)
+        }
+        pickerScroll = scroll
+        pausePicker = scroll
         val lp = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         )
         lp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        lp.bottomMargin = dp(72)
-        root?.addView(picker, lp)
-        picker.visibility = View.VISIBLE
+        lp.bottomMargin = dp(58)
+        root?.addView(scroll, lp)
+        scroll.visibility = View.VISIBLE
         // пока открыт выбор срока — панель не прячем по таймеру
         handler.removeCallbacks(uiHideRunnable)
-        picker.post { (picker.getChildAt(0) as? View)?.requestFocus() }
+        // акцент ставим после лайаута — иначе requestFocus не сработает
+        scroll.post { highlightPicker() }
     }
 
     private fun hideSuspendPicker() {
@@ -853,6 +922,8 @@ class OverlayService : Service() {
             (p.parent as? android.view.ViewGroup)?.removeView(p)
         }
         pausePicker = null
+        pickerScroll = null
+        pickerItems = emptyList()
         // панель снова прячется по таймеру
         if (windowShown) {
             handler.removeCallbacks(uiHideRunnable)
@@ -863,34 +934,89 @@ class OverlayService : Service() {
     private fun buildSuspendPicker(): LinearLayout {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(6), dp(6), dp(6), dp(6))
+            setPadding(dp(4), dp(4), dp(4), dp(4))
             setBackgroundColor(Color.parseColor("#CC1C1C1E"))
         }
+        val items = mutableListOf<TextView>()
         for ((min, label) in suspendOptions) {
-            val item = TextView(this).apply {
-                text = label
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setPadding(dp(14), dp(10), dp(14), dp(10))
-                gravity = Gravity.CENTER
-                isFocusable = true
-                setOnClickListener { applySuspend(min) }
-            }
+            val item = pickerItem(label, Color.WHITE) { applySuspend(min) }
+            items.add(item)
             box.addView(item)
         }
         if (suspendActive()) {
-            val item = TextView(this).apply {
-                text = "Снять паузу"
-                setTextColor(Color.parseColor("#FFD166"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setPadding(dp(14), dp(10), dp(14), dp(10))
-                gravity = Gravity.CENTER
-                isFocusable = true
-                setOnClickListener { cancelSuspend() }
+            val item = pickerItem("Снять паузу", Color.parseColor("#FFD166")) {
+                cancelSuspend()
             }
+            items.add(item)
             box.addView(item)
         }
+        pickerItems = items
+        pickerIndex = 0
         return box
+    }
+
+    /** Пункт списка: компактный, фокусируемый, с обработкой тапа. */
+    private fun pickerItem(
+        label: String,
+        color: Int,
+        onPick: () -> Unit
+    ): TextView =
+        TextView(this).apply {
+            text = label
+            setTextColor(color)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            gravity = Gravity.CENTER
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnClickListener { onPick() }
+        }
+
+    /** Акцент на выбранном пункте (синяя пилюля) — свой, не системный фокус. */
+    private fun highlightPicker() {
+        pickerItems.forEachIndexed { i, v ->
+            if (i == pickerIndex) {
+                v.setTextColor(Color.WHITE)
+                v.background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#FF2979FF"))
+                    cornerRadius = dp(8).toFloat()
+                }
+            } else {
+                v.setTextColor(
+                    if (v.text.toString() == "Снять паузу")
+                        Color.parseColor("#FFD166") else Color.parseColor("#FFDDDDDD")
+                )
+                v.background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#331C1C1E"))
+                    cornerRadius = dp(8).toFloat()
+                }
+            }
+        }
+        pickerItems.getOrNull(pickerIndex)?.requestFocus()
+    }
+
+    /** Движение по списку (D-pad вверх/вниз). */
+    private fun movePicker(delta: Int) {
+        if (pickerItems.isEmpty()) return
+        pickerIndex = (pickerIndex + delta + pickerItems.size) % pickerItems.size
+        highlightPicker()
+        // подкручиваем список, чтобы выбранный пункт был виден
+        val v = pickerItems.getOrNull(pickerIndex) ?: return
+        val top = v.top
+        val bottom = top + v.height
+        val sc = pickerScroll
+        if (sc != null) {
+            if (top < sc.scrollY) sc.scrollTo(0, top)
+            else if (bottom > sc.scrollY + sc.height) {
+                sc.scrollTo(0, bottom - sc.height)
+            }
+        }
+    }
+
+    /** Выбор пункта (ОК с пульта). */
+    private fun selectPicker() {
+        val v = pickerItems.getOrNull(pickerIndex) ?: return
+        v.performClick()
     }
 
     /**
@@ -1044,12 +1170,25 @@ class OverlayService : Service() {
 
     private fun handleKey(ev: KeyEvent): Boolean {
         if (ev.action != KeyEvent.ACTION_DOWN) return false
-        // открыт список сроков паузы — навигацию ведёт система (фокус)
-        if (pausePicker?.visibility == View.VISIBLE) {
-            if (ev.keyCode == KeyEvent.KEYCODE_BACK) {
-                hideSuspendPicker()
-                return true
+        // открыт список сроков паузы — навигацию делаем сами:
+        // оверлей перехватывает D-pad под перемещение окна
+        if (pausePicker != null) {
+            when (ev.keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    movePicker(1); return true
+                }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    movePicker(-1); return true
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    selectPicker(); return true
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    hideSuspendPicker(); return true
+                }
             }
+            // остальные клавиши (громкость и т.п.) — отдаём системе
             return false
         }
         val barWasVisible = uiBar?.visibility == View.VISIBLE
