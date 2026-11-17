@@ -545,6 +545,8 @@ class MainActivity : Activity() {
             attachFocusBlink(this, 10)
         }
         winCard.addView(muteCheck)
+        winCard.addView(alphaSlider("Прозрачность окна", "win_alpha"))
+        winCard.addView(alphaSlider("Прозрачность видео", "video_alpha"))
         lay.addView(winCard)
 
         // --- Секция «Приложение»: версия и встроенное обновление ---
@@ -718,6 +720,67 @@ class MainActivity : Activity() {
                 }
             }
         }.start()
+    }
+
+    /**
+     * Слайдер прозрачности (0..100 %) для настроек окна. Пишет prefs
+     * «settings» — служба читает их при создании окна и переприменяет
+     * на лету через ACTION_ALPHA, если окно уже открыто.
+     */
+    private fun alphaSlider(title: String, key: String): View {
+        val p = getSharedPreferences("settings", MODE_PRIVATE)
+        val valueText = TextView(this).apply {
+            text = "${p.getInt(key, 0)}%"
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        }
+        // дебаунс: с пульта onProgressChanged приходит на каждую клавишу,
+        // а onStopTrackingTouch для клавиш вообще не гарантирован
+        val applyRunnable = Runnable {
+            if (OverlayService.running) {
+                try {
+                    sendToService(OverlayService.ACTION_ALPHA)
+                } catch (_: Exception) {}
+            }
+        }
+        val seek = android.widget.SeekBar(this).apply {
+            max = 100
+            progress = p.getInt(key, 0)
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    sb: android.widget.SeekBar?, value: Int, fromUser: Boolean
+                ) {
+                    if (!fromUser) return
+                    valueText.text = "$value%"
+                    p.edit().putInt(key, value).apply()
+                    windowHandler.removeCallbacks(applyRunnable)
+                    windowHandler.postDelayed(applyRunnable, 400)
+                }
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {
+                    windowHandler.removeCallbacks(applyRunnable)
+                    windowHandler.post(applyRunnable)
+                }
+            })
+            attachFocusBlink(this, 8)
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(16), 0, 0)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(TextView(context).apply {
+                    text = title
+                    setTextColor(cLabel)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(valueText)
+            })
+            addView(seek)
+        }
     }
 
     private fun updateSoundLabel() {

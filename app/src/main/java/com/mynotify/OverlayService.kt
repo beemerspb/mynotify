@@ -55,6 +55,8 @@ class OverlayService : Service() {
         const val ACTION_HIDE = "com.mynotify.action.HIDE"
         const val ACTION_STOP = "com.mynotify.action.STOP"
         const val ACTION_STATE = "com.mynotify.action.STATE"
+        /** Переприменить прозрачность окна/видео после правки в настройках. */
+        const val ACTION_ALPHA = "com.mynotify.action.ALPHA"
         const val EXTRA_URL = "url"
         const val EXTRA_AUTOHIDE_SEC = "autohide_sec"
         const val DEFAULT_URL =
@@ -262,6 +264,14 @@ class OverlayService : Service() {
                 startForegroundNotify("Служба работает — окно скрыто")
                 return START_STICKY
             }
+            ACTION_ALPHA -> {
+                // настройки прозрачности изменили, пока окно открыто
+                startForegroundNotify(
+                    if (windowShown) "Камера поверх экрана"
+                    else "Служба работает — окно скрыто"
+                )
+                handler.post { applyAlpha() }
+            }
             ACTION_SHOW -> {
                 startForegroundNotify("Камера поверх экрана")
                 val url = intent.getStringExtra(EXTRA_URL)?.takeIf { it.isNotBlank() }
@@ -412,7 +422,7 @@ class OverlayService : Service() {
         params = p
 
         val container = OverlayRoot(this).apply {
-            setBackgroundColor(Color.parseColor("#CC000000"))
+            setBackgroundColor(windowBgColor())
             setOnKey { ev -> handleKey(ev) }
             if (hasTouch) {
                 // углы с треугольничками ресайза зарезервированы от перетаскивания
@@ -435,6 +445,7 @@ class OverlayService : Service() {
         val pv = android.view.LayoutInflater.from(this)
             .inflate(R.layout.player_view_overlay, container, false) as PlayerView
         pv.setOnClickListener { showUi() }
+        pv.alpha = videoAlpha()
         playerView = pv
         container.addView(pv, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -521,6 +532,27 @@ class OverlayService : Service() {
         try {
             sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
         } catch (_: Exception) {}
+    }
+
+    // ---------- прозрачность (настройки «Окно камеры») ----------
+    //Prefs: win_alpha / video_alpha — проценты прозрачности 0..100,
+    // 0 = как раньше (фон #CC000000, видео полностью видно).
+
+    private fun transparencyPct(key: String): Int =
+        (prefs.getInt(key, 0) ?: 0).coerceIn(0, 100)
+
+    /** Множитель альфы 1..0 из процента прозрачности. */
+    private fun alphaFromPct(pct: Int): Float = 1f - pct / 100f
+
+    private fun windowBgColor(): Int =
+        Color.argb((204 * alphaFromPct(transparencyPct("win_alpha"))).toInt(), 0, 0, 0)
+
+    private fun videoAlpha(): Float = alphaFromPct(transparencyPct("video_alpha"))
+
+    /** Применить прозрачность к открытому окну (или проигнорировать). */
+    private fun applyAlpha() {
+        root?.setBackgroundColor(windowBgColor())
+        playerView?.alpha = videoAlpha()
     }
 
     private fun hideWindow() {
