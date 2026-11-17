@@ -11,7 +11,11 @@ import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioManager
 import android.media.RingtoneManager
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -59,6 +63,11 @@ class OverlayService : Service() {
         const val ACTION_ALPHA = "com.mynotify.action.ALPHA"
         /** Переприменить настройку показа кнопок в окне (живое применение). */
         const val ACTION_UI = "com.mynotify.action.UI"
+        /** Пауза службы: не показывать окна заданное число минут. */
+        const val ACTION_SUSPEND = "com.mynotify.action.SUSPEND"
+        /** Снять паузу службы. */
+        const val ACTION_SUSPEND_CANCEL = "com.mynotify.action.SUSPEND_CANCEL"
+        const val EXTRA_MINUTES = "minutes"
         const val EXTRA_URL = "url"
         const val EXTRA_AUTOHIDE_SEC = "autohide_sec"
         const val DEFAULT_URL =
@@ -98,6 +107,129 @@ class OverlayService : Service() {
 
     private var fullscreen = false
     private var savedRect: IntArray? = null // x,y,w,h до полноэкранного режима
+
+    // ---------- пауза внешнего видео (кино) при показе окна ----------
+    // Prefs: pause_media_on_show (bool, default true).
+    // Логика: при появлении окна останавливаем то, что сейчас играет
+    // (видеоплеер на ТВ/телефоне), при закрытии окна — запускаем обратно.
+    // Не все потоки умеют паузу (прямые эфиры), поэтому сначала смотрим
+    // MediaSession: если играющей сессии с ACTION_PAUSE нет — не трогаем.
+
+    private var pausedController: MediaController? = null
+    private var pausedByUs = false
+    private var pausedViaKey = false
+    private var pausePicker: LinearLayout? = null
+
+    private fun pauseMediaEnabled(): Boolean =
+        prefs.getBoolean("pause_media_on_show", true)
+
+    /** Поставить внешнее видео на паузу (если оно играет и умеет паузу). */
+    private fun maybePauseExternalMedia() {
+        if (!pauseMediaEnabled() || pausedByUs) return
+        // 1) MediaSession — видно только если система делится списком сессий
+        try {
+            val msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val sessions = msm.getActiveSessions(null)
+            val playing = sessions.firstOrNull { s ->
+                val st = s.playbackState
+                st != null &&
+                    st.state == PlaybackState.STATE_PLAYING &&
+                    (st.actions and PlaybackState.ACTION_PAUSE) != 0L
+            }
+            if (playing != null) {
+                val ctrl = MediaController(this, playing.sessionToken)
+                ctrl.transportControls.pause()
+                pausedController = ctrl
+                pausedByUs = true
+                return
+            }
+            // сессии есть, но ни одна не играет — трогать нечего
+            if (sessions.isNotEmpty()) return
+        } catch (_: Exception) {
+            // список сессий недоступен — пробуем системный медиа-ключ
+        }
+        // 2) медиа-ключ: система сама выберет сессию, которая сейчас играет
+        dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
+        pausedByUs = true
+        pausedViaKey = true
+    }
+
+    /** Вернуть внешнее видео из паузы (только если мы сами его ставили). */
+    private fun resumeExternalMedia() {
+        if (!pausedByUs) return
+        pausedByUs = false
+        val ctrl = pausedController
+        pausedController = null
+        if (ctrl != null) {
+            // точно знаем, какую сессию остановили — её и запускаем
+            try {
+                ctrl.transportControls.play()
+                return
+            } catch (_: Exception) {}
+        }
+        // медиа-ключом: продолжаем только если пауза точно сработала.
+        // Иначе можно запустить то, что пользователь поставил на паузу сам.
+        if (pausedViaKey) {
+            pausedViaKey = false
+            dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+        }
+    }
+
+    /** Системный медиа-ключ (пауза/воспроизведение) — работает без прав. */
+    private fun dispatchMediaKey(code: Int) {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val now = System.currentTimeMillis()
+            am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
+            am.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0))
+        } catch (_: Exception) {}
+    }
+
+    // ---------- пауза службы (окна не показываются заданное время) ----------
+
+    private fun suspendUntil(): Long =
+        prefs.getLong("suspend_until", 0L) ?: 0L
+
+    private fun suspendActive(): Boolean =
+        suspendUntil() > System.currentTimeMillis()
+
+    private fun suspendLabel(): String {
+        val until = suspendUntil()
+        if (until <= System.currentTimeMillis()) return "Пауза не активна"
+        return "Пауза до " + suspendTimeLabel()
+    }
+
+    /** Время окончания паузы в формате HH:mm. */
+    private fun suspendTimeLabel(): String =
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(suspendUntil()))
+
+    /** Включить паузу службы на N минут (окна не появляются). */
+    private fun applySuspend(minutes: Int) {
+        val until = System.currentTimeMillis() + minutes * 60_000L
+        prefs.edit().putLong("suspend_until", until).apply()
+        hideWindow()
+        hideSuspendPicker()
+        startForegroundNotify("Пауза службы — окна не показываются до " +
+            java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(until)))
+        try {
+            sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
+        } catch (_: Exception) {}
+    }
+
+    /** Снять паузу службы. */
+    private fun cancelSuspend() {
+        prefs.edit().putLong("suspend_until", 0L).apply()
+        hideSuspendPicker()
+        startForegroundNotify(
+            if (windowShown) "Камера поверх экрана"
+            else "Служба работает — окно скрыто"
+        )
+        try {
+            sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
+        } catch (_: Exception) {}
+    }
 
     private val hasTouch: Boolean by lazy {
         packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN)
@@ -194,6 +326,13 @@ class OverlayService : Service() {
                     if (ok) {
                         lastHaOk = System.currentTimeMillis()
                         bound = resp.optBoolean("bound")
+                        // пауза истекла — возвращаем обычный режим
+                        if (!suspendActive() &&
+                            (prefs.getLong("suspend_until", 0L) ?: 0L) != 0L
+                        ) {
+                            prefs.edit().putLong("suspend_until", 0L).apply()
+                            startForegroundNotify("Служба работает — окно скрыто")
+                        }
                         // поток проксируется через HA — берём тот адрес HA,
                         // по которому сейчас реально ходим (LAN или внешний)
                         if (base != activeBase) {
@@ -202,6 +341,14 @@ class OverlayService : Service() {
                         }
                         when (resp.optString("cmd")) {
                             "show" -> handler.post {
+                                if (suspendActive()) {
+                                    // пауза службы — окна не показываем
+                                    startForegroundNotify(
+                                        "Пауза службы — окна не показываются до " +
+                                            suspendTimeLabel()
+                                    )
+                                    return@post
+                                }
                                 startForegroundNotify("Камера поверх экрана")
                                 val ed = prefs.edit()
                                     .putString("url", resp.optString("url", ""))
@@ -282,8 +429,23 @@ class OverlayService : Service() {
                 )
                 handler.post { applyUiVisibility() }
             }
+            ACTION_SUSPEND -> {
+                // пауза службы на N минут — окна не показываются
+                val min = intent.getIntExtra(EXTRA_MINUTES, 60).coerceIn(1, 24 * 60)
+                handler.post { applySuspend(min) }
+            }
+            ACTION_SUSPEND_CANCEL -> {
+                handler.post { cancelSuspend() }
+            }
             ACTION_SHOW -> {
                 startForegroundNotify("Камера поверх экрана")
+                if (suspendActive()) {
+                    // пауза службы активна — окно не показываем
+                    startForegroundNotify(
+                        "Пауза службы — окна не показываются до " + suspendTimeLabel()
+                    )
+                    return START_STICKY
+                }
                 val url = intent.getStringExtra(EXTRA_URL)?.takeIf { it.isNotBlank() }
                     ?: pickUrl()
                 if (url.isBlank()) {
@@ -315,9 +477,18 @@ class OverlayService : Service() {
     // ---------- окно ----------
 
     private fun show(url: String) {
+        if (suspendActive()) {
+            // пауза службы — окно не показываем
+            startForegroundNotify(
+                "Пауза службы — окна не показываются до " + suspendTimeLabel()
+            )
+            return
+        }
         if (root == null) createWindow()
         startStream(url)
         playPopupSound()
+        // окно появилось — ставим «кино» на паузу (если оно играет)
+        maybePauseExternalMedia()
     }
 
     /**
@@ -493,6 +664,8 @@ class OverlayService : Service() {
         val vol = iconButton(R.drawable.ic_volume_off, "Звук вкл/выкл") { toggleMute() }
         volBtn = vol
         bar.addView(vol)
+        val timer = iconButton(R.drawable.ic_timer, "Пауза службы") { showSuspendPicker() }
+        bar.addView(timer)
         uiIcons = (0 until bar.childCount).mapNotNull { bar.getChildAt(it) as? ImageButton }
         val barLp = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
@@ -599,8 +772,11 @@ class OverlayService : Service() {
         uiIcons = emptyList()
         fsBtn = null
         cornerViews = emptyList()
+        pausePicker = null
         player?.release()
         player = null
+        // окно закрылось — возвращаем «кино» из паузы
+        resumeExternalMedia()
         try {
             sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
         } catch (_: Exception) {}
@@ -622,7 +798,12 @@ class OverlayService : Service() {
         }
         uiBar?.visibility = View.VISIBLE
         setCornersVisible(if (hasTouch && !fullscreen) View.VISIBLE else View.GONE)
-        if (!hasTouch && uiBar?.hasFocus() != true) uiIcons.firstOrNull()?.requestFocus()
+        // фокус с пульта нельзя перехватывать, пока он в списке паузы
+        if (!hasTouch && uiBar?.hasFocus() != true &&
+            pausePicker?.hasFocus() != true
+        ) {
+            uiIcons.firstOrNull()?.requestFocus()
+        }
         // Таймер автоскрытия ставится ВСЕГДА. Раньше при фокусе в панели он
         // не ставился вовсе — на ТВ (фокус берётся автоматически) панель
         // не скрывалась никогда. Любая клавиша пульта зовёт showUi() и
@@ -637,6 +818,79 @@ class OverlayService : Service() {
         uiBar?.clearFocus()
         uiBar?.visibility = View.GONE
         setCornersVisible(View.GONE)
+    }
+
+    // ---------- выбор паузы прямо в окне ----------
+    // Небольшая панель со сроками: 5/10/15/30/60/120 минут. Работает и
+    // с тапом, и с пульта (кнопки фокусируемые).
+
+    private val suspendOptions = listOf(
+        5 to "5 минут", 10 to "10 минут", 15 to "15 минут",
+        30 to "30 минут", 60 to "1 час", 120 to "2 часа"
+    )
+
+    private fun showSuspendPicker() {
+        if (root == null) return
+        // список строим заново — в нём есть пункт «Снять паузу»,
+        // который зависит от текущего состояния
+        val picker = buildSuspendPicker()
+        pausePicker = picker
+        val lp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        )
+        lp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        lp.bottomMargin = dp(72)
+        root?.addView(picker, lp)
+        picker.visibility = View.VISIBLE
+        // пока открыт выбор срока — панель не прячем по таймеру
+        handler.removeCallbacks(uiHideRunnable)
+        picker.post { (picker.getChildAt(0) as? View)?.requestFocus() }
+    }
+
+    private fun hideSuspendPicker() {
+        pausePicker?.let { p ->
+            (p.parent as? android.view.ViewGroup)?.removeView(p)
+        }
+        pausePicker = null
+        // панель снова прячется по таймеру
+        if (windowShown) {
+            handler.removeCallbacks(uiHideRunnable)
+            handler.postDelayed(uiHideRunnable, UI_TIMEOUT_MS)
+        }
+    }
+
+    private fun buildSuspendPicker(): LinearLayout {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            setBackgroundColor(Color.parseColor("#CC1C1C1E"))
+        }
+        for ((min, label) in suspendOptions) {
+            val item = TextView(this).apply {
+                text = label
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                gravity = Gravity.CENTER
+                isFocusable = true
+                setOnClickListener { applySuspend(min) }
+            }
+            box.addView(item)
+        }
+        if (suspendActive()) {
+            val item = TextView(this).apply {
+                text = "Снять паузу"
+                setTextColor(Color.parseColor("#FFD166"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                gravity = Gravity.CENTER
+                isFocusable = true
+                setOnClickListener { cancelSuspend() }
+            }
+            box.addView(item)
+        }
+        return box
     }
 
     /**
@@ -790,6 +1044,14 @@ class OverlayService : Service() {
 
     private fun handleKey(ev: KeyEvent): Boolean {
         if (ev.action != KeyEvent.ACTION_DOWN) return false
+        // открыт список сроков паузы — навигацию ведёт система (фокус)
+        if (pausePicker?.visibility == View.VISIBLE) {
+            if (ev.keyCode == KeyEvent.KEYCODE_BACK) {
+                hideSuspendPicker()
+                return true
+            }
+            return false
+        }
         val barWasVisible = uiBar?.visibility == View.VISIBLE
         val barHasFocus = uiBar?.hasFocus() == true
         // любая кнопка пульта показывает панель — но если в настройках

@@ -45,6 +45,8 @@ class MainActivity : Activity() {
     private lateinit var stopBtn: Button
     private lateinit var windowBtn: Button
     private lateinit var updText: TextView
+    private lateinit var suspendStatus: TextView
+    private lateinit var cancelSuspendBtn: Button
     private var checkingUpdate = false
     private var permBtn: Button? = null
 
@@ -155,6 +157,11 @@ class MainActivity : Activity() {
         windowBtn.isEnabled = running
         windowBtn.alpha = if (running) 1f else 0.35f
         windowBtn.text = if (shown) "Скрыть окно" else "Показать окно"
+        if (::suspendStatus.isInitialized) suspendStatus.text = suspendLabel()
+        if (::cancelSuspendBtn.isInitialized) {
+            val active = suspendLabel() != "Пауза не активна"
+            cancelSuspendBtn.visibility = if (active) View.VISIBLE else View.GONE
+        }
         if (hasOverlayPermission()) // выдано — больше не показываем
             permBtn?.let { (it.parent as? ViewGroup)?.removeView(it) }
     }
@@ -567,7 +574,70 @@ class MainActivity : Activity() {
             attachFocusBlink(this, 10)
         }
         winCard.addView(hideUiCheck)
+        val pauseMediaCheck = android.widget.CheckBox(this).apply {
+            text = "Ставить видео на паузу при появлении окна"
+            setTextColor(cLabel)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding(0, dp(16), 0, 0)
+            setButtonTintList(
+                android.content.res.ColorStateList.valueOf(cBlue)
+            )
+            isChecked = mutePrefs.getBoolean("pause_media_on_show", true)
+            setOnCheckedChangeListener { _, checked ->
+                mutePrefs.edit().putBoolean("pause_media_on_show", checked).apply()
+            }
+            attachFocusBlink(this, 10)
+        }
+        winCard.addView(pauseMediaCheck)
+        winCard.addView(TextView(this).apply {
+            text = "Когда окно камеры появляется, видео, которое сейчас играет " +
+                "(например, кино на ТВ), ставится на паузу. При закрытии окна " +
+                "снова запускается. Не все потоки умеют паузу — прямые эфиры " +
+                "останутся играть."
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(0, dp(6), 0, 0)
+        })
         lay.addView(winCard)
+
+        // --- Секция «Пауза службы»: окна не появляются заданное время ---
+        lay.addView(sectionLabel("Пауза службы"))
+        val pauseCard = card()
+        pauseCard.addView(TextView(this).apply {
+            text = "Пока пауза активна, камера не показывается — кино не " +
+                "прерывается. По истечении срока всё работает как обычно."
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(0, dp(0), 0, dp(10))
+        })
+        suspendStatus = TextView(this).apply {
+            text = suspendLabel()
+            setTextColor(cLabel)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        pauseCard.addView(suspendStatus)
+        for ((min, label) in suspendOptions) {
+            pauseCard.addView(iosButton("Пауза на $label", cBlue).apply {
+                setOnClickListener {
+                    applySuspendFromUi(min)
+                }
+            })
+        }
+        cancelSuspendBtn = iosButton("Снять паузу", cGray).apply {
+            setOnClickListener {
+                if (OverlayService.running) {
+                    try {
+                        sendToService(OverlayService.ACTION_SUSPEND_CANCEL)
+                    } catch (_: Exception) {}
+                }
+                mutePrefs.edit().putLong("suspend_until", 0L).apply()
+                suspendStatus.text = suspendLabel()
+                updateStatus()
+            }
+        }
+        pauseCard.addView(cancelSuspendBtn)
+        lay.addView(pauseCard)
 
         // --- Секция «Приложение»: версия и встроенное обновление ---
         lay.addView(sectionLabel("Приложение"))
@@ -801,6 +871,37 @@ class MainActivity : Activity() {
             })
             addView(seek)
         }
+    }
+
+    /** Сроки паузы службы — те же, что в окне. */
+    private val suspendOptions = listOf(
+        5 to "5 минут", 10 to "10 минут", 15 to "15 минут",
+        30 to "30 минут", 60 to "1 час", 120 to "2 часа"
+    )
+
+    /** Активна ли пауза и до какого времени. */
+    private fun suspendLabel(): String {
+        val until = getSharedPreferences("settings", MODE_PRIVATE)
+            .getLong("suspend_until", 0L) ?: 0L
+        if (until <= System.currentTimeMillis()) return "Пауза не активна"
+        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+        return "Пауза до " + fmt.format(java.util.Date(until))
+    }
+
+    /** Включить паузу службы из настроек. */
+    private fun applySuspendFromUi(minutes: Int) {
+        val until = System.currentTimeMillis() + minutes * 60_000L
+        getSharedPreferences("settings", MODE_PRIVATE).edit()
+            .putLong("suspend_until", until).apply()
+        if (OverlayService.running) {
+            try {
+                sendToService(OverlayService.ACTION_SUSPEND) {
+                    putExtra(OverlayService.EXTRA_MINUTES, minutes)
+                }
+            } catch (_: Exception) {}
+        }
+        suspendStatus.text = suspendLabel()
+        updateStatus()
     }
 
     private fun updateSoundLabel() {
