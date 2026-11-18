@@ -50,13 +50,17 @@ class MainActivity : Activity() {
     private var checkingUpdate = false
     private var permBtn: Button? = null
 
-    private val cLabel get() = ContextCompat.getColor(this, R.color.ios_label)
-    private val cSecondary get() = ContextCompat.getColor(this, R.color.ios_secondary)
-    private val cBlue get() = ContextCompat.getColor(this, R.color.ios_blue)
-    private val cGreen get() = ContextCompat.getColor(this, R.color.ios_green)
-    private val cRed get() = ContextCompat.getColor(this, R.color.ios_red)
-    private val cOrange get() = ContextCompat.getColor(this, R.color.ios_orange)
-    private val cGray get() = ContextCompat.getColor(this, R.color.ios_gray)
+    // Семантические цвета (палитра — res/values/colors.xml)
+    private val cLabel get() = ContextCompat.getColor(this, R.color.mn_fg)
+    private val cSecondary get() = ContextCompat.getColor(this, R.color.mn_fg2)
+    private val cBlue get() = ContextCompat.getColor(this, R.color.mn_accent)
+    private val cGreen get() = ContextCompat.getColor(this, R.color.mn_live)
+    private val cRed get() = ContextCompat.getColor(this, R.color.mn_danger)
+    private val cOrange get() = ContextCompat.getColor(this, R.color.mn_warn)
+    private val cGray get() = ContextCompat.getColor(this, R.color.mn_fg3)
+    /** Залитые кнопки красим mn_accent_strong: белый на mn_accent даёт 2.5:1.
+     *  Сам mn_accent остаётся на тексте, ссылках и кольце фокуса. */
+    private val cAccentFill get() = ContextCompat.getColor(this, R.color.mn_accent_strong)
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) = updateStatus()
@@ -150,6 +154,7 @@ class MainActivity : Activity() {
             shown -> "Подключено · окно показано"
             else -> "Подключено · окно скрыто"
         }
+        statusBig?.text = statusText.text
         launchBtn.isEnabled = !running
         launchBtn.alpha = if (running) 0.35f else 1f
         stopBtn.isEnabled = running
@@ -171,60 +176,24 @@ class MainActivity : Activity() {
     private fun dp(v: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
-    /** Заголовок-лист: серый капс поверх секции (iOS grouped table header). */
-    private fun sectionLabel(text: String): TextView = TextView(this).apply {
-        this.text = text.uppercase()
-        setTextColor(cSecondary)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-        letterSpacing = 0.06f
-        setTypeface(Typeface.DEFAULT_BOLD)
-        setPadding(dp(20), dp(22), dp(20), dp(6))
-    }
 
     /** Белая скруглённая карточка-секция. */
     private fun card(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(18), dp(16), dp(18), dp(16))
-        background = GradientDrawable().apply {
-            setColor(ContextCompat.getColor(this@MainActivity, R.color.ios_card))
-            cornerRadius = dp(16).toFloat()
-        }
+        background = Design.cardBg(this@MainActivity)
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        lp.leftMargin = dp(16); lp.rightMargin = dp(16)
+        lp.leftMargin = dp(14); lp.rightMargin = dp(14)
         layoutParams = lp
     }
 
-    /** Кнопка iOS: сплошной акцент, скругление 14, medium 17sp. */
-    // Мигающий красный контур фокуса (для пульта ТВ): foreground-кольцо,
-    // фон элемента не трогает. Аниматор — в замыкании, не в setTag:
-    // setTag(int) с ключом generateViewId() кидает IllegalArgumentException
-    // и ронял приложение на первом же фокусе с пульта (краш на ТВ v0.7.11).
-    private fun attachFocusBlink(v: View, radiusDp: Int) {
-        v.isFocusable = true
-        val ring = android.graphics.drawable.GradientDrawable().apply {
-            setColor(android.graphics.Color.TRANSPARENT)
-            setStroke(dp(3), android.graphics.Color.parseColor("#FFFF3B30"))
-            cornerRadius = dp(radiusDp).toFloat()
-        }
-        ring.alpha = 0
-        if (android.os.Build.VERSION.SDK_INT >= 23) v.foreground = ring
-        var anim: android.animation.ObjectAnimator? = null
-        v.setOnFocusChangeListener { _, focused ->
-            anim?.cancel()
-            anim = null
-            ring.alpha = 0
-            if (focused && android.os.Build.VERSION.SDK_INT >= 23) {
-                ring.alpha = 255
-                anim = android.animation.ObjectAnimator.ofInt(ring, "alpha", 255, 0, 255)
-                    .apply {
-                        duration = 900
-                        repeatCount = android.animation.ObjectAnimator.INFINITE
-                    }
-                    .also { it.start() }
-            }
-        }
-    }
+    // Кольцо фокуса для пульта: было мигающим красным, стало спокойным синим
+    // (на тёмном холсте красное мигание кричало и спорило с акцентом).
+    // Аниматор держим в замыкании слушателя — setTag(int) с ключом
+    // generateViewId() ронял приложение на первом фокусе (краш v0.7.11).
+    private fun attachFocusBlink(v: View, radiusDp: Int) =
+        Design.attachFocusRing(v, radiusDp)
 
     // На Android TV у Settings нет страницы ACTION_MANAGE_OVERLAY_PERMISSION —
     // прямой startActivity кидал ActivityNotFoundException и ронял приложение.
@@ -259,36 +228,59 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun iosButton(text: String, color: Int): Button = Button(this).apply {
+    /**
+     * Кнопка-чип: ширина по тексту, а не на всё окно — растянутые полосы на
+     * 1400 px юзер назвал неудобными. color == cGray трактуем как нейтральную
+     * (поверхность + обычный текст), cOrange — тёмный текст поверх янтаря
+     * (белый на янтаре не читается). Синий акцент льётся mn_accent_strong ради
+     * контраста белого текста.
+     */
+    private fun uiButton(text: String, color: Int): Button = Button(this).apply {
         this.text = text
         isAllCaps = false
-        setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL))
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-        stateListAnimator = null
-        background = android.graphics.drawable.StateListDrawable().apply {
-            addState(
-                intArrayOf(android.R.attr.state_focused),
-                GradientDrawable().apply {
-                    setColor(color)
-                    cornerRadius = dp(14).toFloat()
-                    setStroke(dp(3), Color.parseColor("#FFFFFFFF"))
-                }
-            )
-            addState(
-                intArrayOf(),
-                GradientDrawable().apply {
-                    setColor(color)
-                    cornerRadius = dp(14).toFloat()
-                }
-            )
+        letterSpacing = 0f
+        val neutral = color == cGray
+        val warn = color == cOrange
+        val fill = when {
+            neutral -> ContextCompat.getColor(this@MainActivity, R.color.mn_surface2)
+            color == cBlue -> cAccentFill
+            else -> color
         }
-        attachFocusBlink(this, 14)
-        val lp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(50))
-        lp.topMargin = dp(10)
-        layoutParams = lp
+        setTextColor(
+            when {
+                neutral -> cLabel
+                warn -> ContextCompat.getColor(this@MainActivity, R.color.mn_bg)
+                else -> Color.WHITE
+            }
+        )
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        setTypeface(Design.manrope(this@MainActivity, 600))
+        stateListAnimator = null
+        background = Design.buttonBg(this@MainActivity, fill)
+        attachFocusBlink(this, 12)
+        minWidth = dp(104)
+        setPadding(dp(18), 0, dp(18), 0)
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(46))
     }
+
+    /** Ряд компактных кнопок с зазором; перенос строк делает вызывающий. */
+    private fun row(vararg views: View): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(10), 0, 0)
+        views.forEachIndexed { i, v ->
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            if (i > 0) lp.leftMargin = dp(10)
+            addView(v, lp)
+        }
+    }
+
+    /** «30 минут» -> «30 мин», «1 час» -> «1 ч»: чипы должны быть короткими. */
+    private fun shortDur(label: String): String = label
+        .replace(" минут", " мин").replace(" минута", " мин")
+        .replace(" часов", " ч").replace(" час", " ч")
 
     private fun footer(text: String): TextView = TextView(this).apply {
         this.text = text
@@ -298,192 +290,167 @@ class MainActivity : Activity() {
         setPadding(dp(28), dp(14), dp(28), dp(24))
     }
 
+    // ---------- навигация: экраны + рейка ----------
+    //
+    // Раньше всё лежало одним вертикальным списком на ~2300 px: чтобы добраться
+    // до «Показать окно» или сроков паузы, по ТВ нужно было скроллить пультом.
+    // Теперь мастер-деталь: слева рейка разделов, справа только выбранный
+    // раздел, состояние службы — всегда в шапке.
+    private val screens = mutableListOf<View>()
+    private val railItems = mutableListOf<TextView>()
+    private var selectedScreen = 0
+    private var statusBig: TextView? = null
+
+    private fun selectScreen(index: Int) {
+        if (index !in screens.indices) return
+        selectedScreen = index
+        screens.forEachIndexed { i, v ->
+            v.visibility = if (i == index) View.VISIBLE else View.GONE
+        }
+        railItems.forEachIndexed { i, v -> v.isSelected = i == index }
+        (screens[index] as? ScrollView)?.fullScroll(ScrollView.FOCUS_UP)
+    }
+
+    /** Пункт рейки: выбор = мягкий акцент, фокус с пульта = залитый + белый штрих. */
+    private fun railItem(title: String, index: Int): TextView = TextView(this).apply {
+        text = title
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        setTypeface(Design.manrope(this@MainActivity, 600))
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(52)
+        setPadding(dp(16), dp(12), dp(12), dp(12))
+        isFocusable = true
+        isClickable = true
+        setTextColor(
+            ColorStateList(
+                arrayOf(
+                    intArrayOf(android.R.attr.state_focused),
+                    intArrayOf(android.R.attr.state_selected),
+                    intArrayOf()
+                ),
+                intArrayOf(Color.WHITE, cBlue, cSecondary)
+            )
+        )
+        val r = dp(Design.R_BUTTON).toFloat()
+        background = android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply {
+                setColor(cAccentFill)
+                cornerRadius = r
+                setStroke(dp(3), Color.WHITE)
+            })
+            addState(intArrayOf(android.R.attr.state_selected), GradientDrawable().apply {
+                setColor(ContextCompat.getColor(this@MainActivity, R.color.mn_accent_soft))
+                cornerRadius = r
+                setStroke(dp(1), cBlue)
+            })
+            addState(intArrayOf(), GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = r
+            })
+        }
+        setOnClickListener { selectScreen(index) }
+    }
+
+    /** Экран: вертикальный список карточек внутри ScrollView (скрыт по умолчанию). */
+    private fun screen(inner: LinearLayout): ScrollView = ScrollView(this).apply {
+        isFillViewport = true
+        visibility = View.GONE
+        setPadding(0, 0, 0, dp(16))
+        addView(inner, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    private fun screenBody(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(2), dp(2), dp(2), 0)
+    }
+
+    /** Карточка-контейнер с уже расставленными отступами между блоками. */
+    private fun block(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, 0, 0, dp(10))
+    }
+
+    private fun bodyText(text: String, top: Int = 10): TextView = TextView(this).apply {
+        this.text = text
+        setTextColor(cSecondary)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        setPadding(0, dp(top), 0, 0)
+    }
+
     private fun buildUi() {
-        val lay = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.ios_bg))
-            setPadding(0, dp(28), 0, dp(12))
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.mn_bg))
+            setPadding(dp(20), dp(20), dp(20), 0)
         }
 
-        // Large title
-        lay.addView(TextView(this).apply {
+        // --- шапка: заголовок + состояние (видно всегда, без скролла) ---
+        root.addView(TextView(this).apply {
             text = "MyNotify"
             setTextColor(cLabel)
-            setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 32f)
+            setTypeface(Design.manrope(this@MainActivity, 800))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
             letterSpacing = -0.02f
-            setPadding(dp(20), 0, dp(20), dp(2))
         })
-        lay.addView(TextView(this).apply {
-            text = "Камера Home Assistant поверх любого приложения"
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setPadding(dp(20), 0, dp(20), 0)
-        })
-
-        // --- Секция «Состояние» ---
-        lay.addView(sectionLabel("Состояние"))
-        val statusCard = card()
-        val statusRow = LinearLayout(this).apply {
+        val pill = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), dp(8), 0, dp(14))
         }
         statusDot = TextView(this).apply {
             text = "●"
             setTextColor(cGray)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(0, 0, dp(10), 0)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(0, 0, dp(8), 0)
         }
         statusText = TextView(this).apply {
             text = "Служба остановлена"
-            setTextColor(cLabel)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-        }
-        statusRow.addView(statusDot)
-        statusRow.addView(statusText)
-        statusCard.addView(statusRow)
-        statusCard.addView(TextView(this).apply {
-            text = "Управление камерой и показом — в Home Assistant"
             setTextColor(cSecondary)
+            setTypeface(Design.mono(this@MainActivity, 500))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            letterSpacing = 0.04f
+        }
+        pill.addView(statusDot)
+        pill.addView(statusText)
+        root.addView(pill)
+
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        root.addView(body)
+
+        val wide = resources.configuration.screenWidthDp >= 600
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        }
+
+        // --- экран 1: служба (главные действия на первом экране) ---
+        val s1 = screenBody()
+        val stCard = card()
+        stCard.addView(TextView(this).apply {
+            text = "Состояние"
+            setTextColor(cLabel)
+            setTypeface(Design.manrope(this@MainActivity, 700))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        })
+        statusBig = TextView(this).apply {
+            text = "Служба остановлена"
+            setTextColor(cLabel)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setPadding(0, dp(6), 0, 0)
-        })
-        lay.addView(statusCard)
+        }
+        stCard.addView(statusBig)
+        stCard.addView(bodyText(
+            "Служба сама подключается к Home Assistant и ждёт команды — " +
+                "камеру и показ выбирают там. ADB не нужен."))
+        s1.addView(block().apply { addView(stCard) })
 
-        // --- Секция «Привязка» ---
-        lay.addView(sectionLabel("Привязка к Home Assistant"))
-        val pairCard = card()
-        pairCard.addView(TextView(this).apply {
-            text = "КОД ПРИВЯЗКИ"
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            letterSpacing = 0.08f
-            gravity = Gravity.CENTER
-        })
-        codeText = TextView(this).apply {
-            text = "––– –––"
-            setTextColor(cBlue)
-            setTypeface(Typeface.create("monospace", Typeface.BOLD))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
-            gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, dp(2))
-            letterSpacing = 0.08f
-        }
-        pairCard.addView(codeText)
-        pairCard.addView(TextView(this).apply {
-            text = "Введите этот код при добавлении устройства\nв интеграции MyNotify"
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            gravity = Gravity.CENTER
-        })
-        urlInput = EditText(this).apply {
-            setText(getSharedPreferences("settings", MODE_PRIVATE)
-                .getString("ha_url", "http://homeassistant.local:8123"))
-            hint = "Адрес Home Assistant"
-            setSingleLine()
-            setTextColor(cLabel)
-            setHintTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            background = GradientDrawable().apply {
-                setColor(ContextCompat.getColor(this@MainActivity, R.color.ios_field))
-                cornerRadius = dp(12).toFloat()
-            }
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            // ТВ: поле должно брать фокус и с пульта, и в touch-режиме,
-            // плюс мигающий красный контур как у кнопок
-            isFocusable = true
-            isFocusableInTouchMode = true
-            attachFocusBlink(this, 12)
-            val lp = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            lp.topMargin = dp(14)
-            layoutParams = lp
-        }
-        pairCard.addView(urlInput)
-        extUrlInput = EditText(this).apply {
-            setText(getSharedPreferences("settings", MODE_PRIVATE)
-                .getString("ha_url_ext", ""))
-            hint = "Ссылка HA извне (необязательно): https://ha.example.com"
-            setSingleLine()
-            setTextColor(cLabel)
-            setHintTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            background = GradientDrawable().apply {
-                setColor(ContextCompat.getColor(this@MainActivity, R.color.ios_field))
-                cornerRadius = dp(12).toFloat()
-            }
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            isFocusable = true
-            isFocusableInTouchMode = true
-            attachFocusBlink(this, 12)
-            val lp = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            lp.topMargin = dp(8)
-            layoutParams = lp
-        }
-        pairCard.addView(extUrlInput)
-        pairCard.addView(iosButton("Сохранить адреса", cGray).apply {
-            setOnClickListener {
-                getSharedPreferences("settings", MODE_PRIVATE).edit()
-                    .putString("ha_url", urlInput.text.toString().trim().trimEnd('/'))
-                    .putString("ha_url_ext", extUrlInput.text.toString().trim().trimEnd('/'))
-                    .apply()
-                Toast.makeText(this@MainActivity, "Адреса сохранены", Toast.LENGTH_SHORT).show()
-            }
-        })
-        pairCard.addView(TextView(this).apply {
-            text = "Второе поле — внешний адрес HA (домен, Nabu Casa, Tailscale). " +
-                "Дома приложение использует локальный адрес, а вне сети " +
-                "автоматически переключается на внешний."
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(0, dp(8), 0, 0)
-        })
-        if (!hasOverlayPermission()) {
-            permBtn = iosButton("Разрешить показ поверх приложений", cOrange).apply {
-                setOnClickListener { openOverlayPermission() }
-            }
-            pairCard.addView(permBtn)
-        }
-        lay.addView(pairCard)
-
-        // --- Секция «Служба» ---
-        lay.addView(sectionLabel("Фоновая служба"))
-        val svcCard = card()
-        launchBtn = iosButton("Запустить службу", cGreen).apply {
-            setOnClickListener {
-                if (!hasOverlayPermission()) {
-                    Toast.makeText(
-                        this@MainActivity, "Сначала выдайте разрешение", Toast.LENGTH_LONG
-                    ).show()
-                    return@setOnClickListener
-                }
-                // только служба, без окна — окно показывает HA или кнопка ниже
-                sendToService(OverlayService.ACTION_START)
-                updateStatus()
-            }
-        }
-        svcCard.addView(launchBtn)
-        stopBtn = iosButton("Остановить службу", cRed).apply {
-            setOnClickListener {
-                sendToService(OverlayService.ACTION_STOP)
-                updateStatus()
-            }
-        }
-        svcCard.addView(stopBtn)
-        svcCard.addView(TextView(this).apply {
-            text = "Служба сама подключается к Home Assistant и ждёт команды — " +
-                "там выбирается камера и показ окна. ADB не нужен."
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(0, dp(10), 0, 0)
-        })
-        lay.addView(svcCard)
-
-        // --- Секция «Окно» ---
-        lay.addView(sectionLabel("Окно камеры"))
-        val winCard = card()
-        windowBtn = iosButton("Показать окно", cBlue).apply {
+        val actCard = card()
+        windowBtn = uiButton("Показать окно", cBlue).apply {
             setOnClickListener {
                 if (!OverlayService.running) {
                     Toast.makeText(
@@ -499,27 +466,101 @@ class MainActivity : Activity() {
                 windowHandler.postDelayed({ updateStatus() }, 400)
             }
         }
-        windowBtn.layoutParams = (windowBtn.layoutParams as LinearLayout.LayoutParams)
-            .apply { topMargin = 0 }
-        winCard.addView(windowBtn)
-        winCard.addView(TextView(this).apply {
-            text = "ЗВУК ПРИ ПОКАЗЕ ОКНА"
-            setTextColor(cSecondary)
+        actCard.addView(row(windowBtn))
+        launchBtn = uiButton("Запустить службу", cGreen).apply {
+            setOnClickListener {
+                if (!hasOverlayPermission()) {
+                    Toast.makeText(
+                        this@MainActivity, "Сначала выдайте разрешение", Toast.LENGTH_LONG
+                    ).show()
+                    return@setOnClickListener
+                }
+                // только служба, без окна — окно показывает HA или кнопка выше
+                sendToService(OverlayService.ACTION_START)
+                updateStatus()
+            }
+        }
+        stopBtn = uiButton("Остановить службу", cRed).apply {
+            setOnClickListener {
+                sendToService(OverlayService.ACTION_STOP)
+                updateStatus()
+            }
+        }
+        // два ряда вместо трёх растянутых полос: primary-действие отдельно
+        actCard.addView(row(launchBtn, stopBtn))
+        s1.addView(block().apply { addView(actCard) })
+        screens.add(screen(s1))
+
+        // --- экран 2: пауза службы ---
+        val s2 = screenBody()
+        val pauseCard = card()
+        pauseCard.addView(TextView(this).apply {
+            text = "Пауза службы"
+            setTextColor(cLabel)
+            setTypeface(Design.manrope(this@MainActivity, 700))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        })
+        pauseCard.addView(bodyText(
+            "Пока пауза активна, камера не показывается — кино не прерывается. " +
+                "По истечении срока всё работает как обычно.", 8))
+        suspendStatus = TextView(this).apply {
+            text = suspendLabel()
+            setTextColor(cLabel)
+            setTypeface(Design.mono(this@MainActivity, 500))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setPadding(0, dp(8), 0, dp(4))
+        }
+        pauseCard.addView(suspendStatus)
+        TextView(this).apply {
+            text = "ДЛИТЕЛЬНОСТЬ ПАУЗЫ"
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.mn_fg3))
+            setTypeface(Design.mono(this@MainActivity, 600))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            letterSpacing = 0.08f
-            setPadding(0, dp(16), 0, 0)
+            letterSpacing = 0.14f
+            setPadding(0, dp(6), 0, 0)
+        }.also { pauseCard.addView(it) }
+        suspendOptions.map { (min, label) ->
+            uiButton(shortDur(label), cBlue).apply {
+                setOnClickListener { applySuspendFromUi(min) }
+            }
+        }.chunked(3).forEach { pauseCard.addView(row(*it.toTypedArray())) }
+        cancelSuspendBtn = uiButton("Снять паузу", cGray).apply {
+            setOnClickListener {
+                if (OverlayService.running) {
+                    try {
+                        sendToService(OverlayService.ACTION_SUSPEND_CANCEL)
+                    } catch (_: Exception) {}
+                }
+                getSharedPreferences("settings", MODE_PRIVATE)
+                    .edit().putLong("suspend_until", 0L).apply()
+                suspendStatus.text = suspendLabel()
+                updateStatus()
+            }
+        }
+        pauseCard.addView(row(cancelSuspendBtn))
+        s2.addView(block().apply { addView(pauseCard) })
+        screens.add(screen(s2))
+
+        // --- экран 3: окно камеры (звук, прозрачность, кнопки) ---
+        val s3 = screenBody()
+        val mutePrefs = getSharedPreferences("settings", MODE_PRIVATE)
+        val sndCard = card()
+        sndCard.addView(TextView(this).apply {
+            text = "Звук при показе окна"
+            setTextColor(cLabel)
+            setTypeface(Design.manrope(this@MainActivity, 700))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
         })
         soundText = TextView(this).apply {
-            setTextColor(cLabel)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            setPadding(0, dp(4), 0, 0)
+            setTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setPadding(0, dp(6), 0, 0)
         }
         updateSoundLabel()
-        winCard.addView(soundText)
-        winCard.addView(iosButton("Выбрать системный звук", cGray).apply {
+        sndCard.addView(soundText)
+        sndCard.addView(row(uiButton("Выбрать системный звук", cGray).apply {
             setOnClickListener {
-                val cur = getSharedPreferences("settings", MODE_PRIVATE)
-                    .getString("sound_uri", null)
+                val cur = mutePrefs.getString("sound_uri", null)
                 val i = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
                     putExtra(
                         RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION
@@ -534,33 +575,36 @@ class MainActivity : Activity() {
                 }
                 startActivityForResult(i, REQ_SOUND)
             }
-        })
-        val mutePrefs = getSharedPreferences("settings", MODE_PRIVATE)
+        }))
         val muteCheck = android.widget.CheckBox(this).apply {
             text = "Заглушать звук видеопотока при старте"
             setTextColor(cLabel)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            setPadding(0, dp(16), 0, 0)
-            setButtonTintList(
-                android.content.res.ColorStateList.valueOf(cBlue)
-            )
+            setPadding(0, dp(14), 0, 0)
+            setButtonTintList(ColorStateList.valueOf(cBlue))
             isChecked = mutePrefs.getBoolean("mute_on_start", true)
             setOnCheckedChangeListener { _, checked ->
                 mutePrefs.edit().putBoolean("mute_on_start", checked).apply()
             }
-            // мигающий красный контур фокуса (виден с пульта ТВ)
             attachFocusBlink(this, 10)
         }
-        winCard.addView(muteCheck)
-        winCard.addView(alphaSlider("Прозрачность (окно и видео)", "overlay_alpha"))
+        sndCard.addView(muteCheck)
+        s3.addView(block().apply { addView(sndCard) })
+
+        val viewCard = card()
+        viewCard.addView(TextView(this).apply {
+            text = "Вид окна"
+            setTextColor(cLabel)
+            setTypeface(Design.manrope(this@MainActivity, 700))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        })
+        viewCard.addView(alphaSlider("Прозрачность (окно и видео)", "overlay_alpha"))
         val hideUiCheck = android.widget.CheckBox(this).apply {
             text = "Не показывать кнопки в окне камеры"
             setTextColor(cLabel)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            setPadding(0, dp(16), 0, 0)
-            setButtonTintList(
-                android.content.res.ColorStateList.valueOf(cBlue)
-            )
+            setPadding(0, dp(14), 0, 0)
+            setButtonTintList(ColorStateList.valueOf(cBlue))
             isChecked = mutePrefs.getBoolean("hide_ui_buttons", false)
             setOnCheckedChangeListener { _, checked ->
                 mutePrefs.edit().putBoolean("hide_ui_buttons", checked).apply()
@@ -573,89 +617,178 @@ class MainActivity : Activity() {
             }
             attachFocusBlink(this, 10)
         }
-        winCard.addView(hideUiCheck)
-        lay.addView(winCard)
+        viewCard.addView(hideUiCheck)
+        s3.addView(block().apply { addView(viewCard) })
+        screens.add(screen(s3))
 
-        // --- Секция «Пауза службы»: окна не появляются заданное время ---
-        lay.addView(sectionLabel("Пауза службы"))
-        val pauseCard = card()
-        pauseCard.addView(TextView(this).apply {
-            text = "Пока пауза активна, камера не показывается — кино не " +
-                "прерывается. По истечении срока всё работает как обычно."
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(0, dp(0), 0, dp(10))
-        })
-        suspendStatus = TextView(this).apply {
-            text = suspendLabel()
+        // --- экран 4: подключение (код привязки и адреса) ---
+        val s4 = screenBody()
+        val pairCard = card()
+        pairCard.addView(TextView(this).apply {
+            text = "Привязка к Home Assistant"
             setTextColor(cLabel)
+            setTypeface(Design.manrope(this@MainActivity, 700))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        })
+        pairCard.addView(TextView(this).apply {
+            text = "КОД ПРИВЯЗКИ"
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.mn_fg3))
+            setTypeface(Design.mono(this@MainActivity, 600))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            letterSpacing = 0.14f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, 0)
+        })
+        codeText = TextView(this).apply {
+            text = "––– –––"
+            setTextColor(cBlue)
+            setTypeface(Design.mono(this@MainActivity, 700))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 36f)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(2))
+            letterSpacing = 0.08f
+        }
+        pairCard.addView(codeText)
+        pairCard.addView(bodyText(
+            "Введите этот код при добавлении устройства в интеграции MyNotify", 0))
+        urlInput = EditText(this).apply {
+            setText(mutePrefs.getString("ha_url", "http://homeassistant.local:8123"))
+            hint = "Адрес Home Assistant"
+            setSingleLine()
+            setTextColor(cLabel)
+            setHintTextColor(cSecondary)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            setPadding(0, dp(4), 0, dp(4))
+            background = Design.fieldBg(this@MainActivity)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            // ТВ: поле должно брать фокус и с пульта, и в touch-режиме
+            isFocusable = true
+            isFocusableInTouchMode = true
+            attachFocusBlink(this, 12)
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = dp(14)
+            layoutParams = lp
         }
-        pauseCard.addView(suspendStatus)
-        for ((min, label) in suspendOptions) {
-            pauseCard.addView(iosButton("Пауза на $label", cBlue).apply {
-                setOnClickListener {
-                    applySuspendFromUi(min)
-                }
-            })
+        pairCard.addView(urlInput)
+        extUrlInput = EditText(this).apply {
+            setText(mutePrefs.getString("ha_url_ext", ""))
+            hint = "Ссылка HA извне (необязательно): https://ha.example.com"
+            setSingleLine()
+            setTextColor(cLabel)
+            setHintTextColor(cSecondary)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            background = Design.fieldBg(this@MainActivity)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            isFocusable = true
+            isFocusableInTouchMode = true
+            attachFocusBlink(this, 12)
+            val lp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = dp(10)
+            layoutParams = lp
         }
-        cancelSuspendBtn = iosButton("Снять паузу", cGray).apply {
+        pairCard.addView(extUrlInput)
+        pairCard.addView(row(uiButton("Сохранить адреса", cGray).apply {
             setOnClickListener {
-                if (OverlayService.running) {
-                    try {
-                        sendToService(OverlayService.ACTION_SUSPEND_CANCEL)
-                    } catch (_: Exception) {}
-                }
-                mutePrefs.edit().putLong("suspend_until", 0L).apply()
-                suspendStatus.text = suspendLabel()
-                updateStatus()
+                mutePrefs.edit()
+                    .putString("ha_url", urlInput.text.toString().trim())
+                    .putString("ha_url_ext", extUrlInput.text.toString().trim())
+                    .apply()
+                Toast.makeText(this@MainActivity, "Адреса сохранены", Toast.LENGTH_SHORT).show()
             }
+        }))
+        if (!hasOverlayPermission()) {
+            permBtn = uiButton("Разрешить показ поверх приложений", cOrange).apply {
+                setOnClickListener { openOverlayPermission() }
+            }
+            pairCard.addView(row(permBtn!!))
         }
-        pauseCard.addView(cancelSuspendBtn)
-        lay.addView(pauseCard)
+        s4.addView(block().apply { addView(pairCard) })
+        screens.add(screen(s4))
 
-        // --- Секция «Приложение»: версия и встроенное обновление ---
-        lay.addView(sectionLabel("Приложение"))
+        // --- экран 5: приложение (версия и обновления) ---
+        val s5 = screenBody()
         val appCard = card()
         appCard.addView(TextView(this).apply {
             text = "Версия ${appVersion()}"
             setTextColor(cLabel)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTypeface(Design.manrope(this@MainActivity, 700))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
         })
         updText = TextView(this).apply {
             setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setPadding(0, dp(6), 0, 0)
         }
         appCard.addView(updText)
-        appCard.addView(iosButton("Проверить обновления", cBlue).apply {
+        appCard.addView(row(uiButton("Проверить обновления", cBlue).apply {
             setOnClickListener { checkUpdate() }
-        })
-        appCard.addView(TextView(this).apply {
-            text = "Обновление скачивается с GitHub и устанавливается " +
-                "обычным системным диалогом."
-            setTextColor(cSecondary)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(0, dp(8), 0, 0)
-        })
-        lay.addView(appCard)
+        }))
+        appCard.addView(bodyText(
+            "Обновление скачивается с GitHub и устанавливается обычным " +
+                "системным диалогом."))
+        s5.addView(block().apply { addView(appCard) })
+        s5.addView(footer("MyNotify ${appVersion()} · Home Assistant"))
+        screens.add(screen(s5))
 
-        lay.addView(footer("MyNotify ${appVersion()} · Home Assistant"))
-
-        setContentView(
-            ScrollView(this).apply {
-                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.ios_bg))
-                addView(
-                    lay,
-                    ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                )
+        // --- рейка: слева на широком экране, полосой сверху на узком ---
+        val titles = listOf("Служба", "Пауза", "Окно", "Подключение", "Приложение")
+        titles.forEachIndexed { i, t -> railItems.add(railItem(t, i)) }
+        if (wide) {
+            val rail = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 0, dp(14), 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    dp(216), ViewGroup.LayoutParams.MATCH_PARENT)
             }
-        )
+            railItems.forEach {
+                it.layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                rail.addView(it)
+            }
+            body.addView(rail)
+            body.addView(content)
+        } else {
+            val strip = android.widget.HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+            val rail = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            railItems.forEach {
+                it.layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                it.setPadding(dp(14), dp(10), dp(14), dp(10))
+                rail.addView(it)
+            }
+            strip.addView(rail)
+            // полоса обязана быть над контентом: body уже добавлен в root с весом,
+            // поэтому вставляем по индексу, иначе вкладки уедут за низ экрана
+            root.addView(strip, 2)
+            body.addView(content)
+        }
+
+        val contentPad = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+        screens.forEach { contentPad.addView(it) }
+        content.addView(contentPad)
+        // колонка контента ограничена по ширине: на 10 футов широкие полосы
+        // читаются плохо, а кнопки-чипы в растянутом контейнере выглядят глупо
+        content.post {
+            val max = dp(560)
+            if (content.width > max) content.setPadding(0, 0, content.width - max, 0)
+        }
+
+        setContentView(root)
+        selectScreen(0)
+        updateStatus()
+        // на ТВ первый фокус должен попадать на рейку, а не в «никуда»
+        root.post { railItems.getOrNull(0)?.requestFocus() }
     }
+
 
     private val windowHandler = android.os.Handler(android.os.Looper.getMainLooper())
 

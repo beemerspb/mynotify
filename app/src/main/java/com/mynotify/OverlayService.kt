@@ -27,6 +27,7 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -436,32 +437,8 @@ class OverlayService : Service() {
     // ВАЖНО: аниматор хранится в замыкании, НЕ в setTag: setTag(int) требует
     // ключ >= 0x01000000, а View.generateViewId() отдаёт значения ниже —
     // на фокус с пульта падал с IllegalArgumentException (краш на ТВ v0.7.11).
-    private fun attachFocusBlink(v: View, radiusDp: Int) {
-        val ring = GradientDrawable().apply {
-            setColor(Color.TRANSPARENT)
-            setStroke(dp(3), Color.parseColor("#FFFF3B30"))
-            cornerRadius = dp(radiusDp).toFloat()
-        }
-        ring.alpha = 0
-        if (Build.VERSION.SDK_INT >= 23) v.foreground = ring
-        var anim: android.animation.ObjectAnimator? = null
-        v.setOnFocusChangeListener { _, focused ->
-            anim?.cancel()
-            anim = null
-            ring.alpha = 0
-            if (focused) {
-                if (Build.VERSION.SDK_INT >= 23) {
-                    ring.alpha = 255
-                    anim = android.animation.ObjectAnimator.ofInt(ring, "alpha", 255, 0, 255)
-                        .apply {
-                            duration = 900
-                            repeatCount = android.animation.ObjectAnimator.INFINITE
-                        }
-                        .also { it.start() }
-                }
-            }
-        }
-    }
+    private fun attachFocusBlink(v: View, radiusDp: Int) =
+        Design.attachFocusRing(v, radiusDp)
 
     private fun iconButton(resIcon: Int, desc: String, action: () -> Unit): ImageButton =
         ImageButton(this).apply {
@@ -474,24 +451,12 @@ class OverlayService : Service() {
             // Фокус для пульта ДУ: классический StateListDrawable — обе
             // состояния одна и та же скруглённая пилюля, фокус = синий
             // цвет + белая обводка. Без замены фона на лету и масштабов.
-            background = android.graphics.drawable.StateListDrawable().apply {
-                addState(
-                    intArrayOf(android.R.attr.state_focused),
-                    GradientDrawable().apply {
-                        setColor(Color.parseColor("#FF2979FF"))
-                        cornerRadius = dp(22).toFloat()
-                        setStroke(dp(3), Color.parseColor("#FFFFFFFF"))
-                    }
-                )
-                addState(
-                    intArrayOf(),
-                    GradientDrawable().apply {
-                        setColor(Color.parseColor("#B31C1C1E"))
-                        cornerRadius = dp(22).toFloat()
-                    }
-                )
-                }
-                attachFocusBlink(this, 22)
+            background = Design.buttonBg(
+                context,
+                ContextCompat.getColor(context, R.color.mn_pill),
+                radiusDp = 22
+            )
+            attachFocusBlink(this, 22)
             setOnClickListener { showUi(); action() }
         }
 
@@ -560,8 +525,8 @@ class OverlayService : Service() {
 
         // причина отсутствия картинки — прямо по центру окна (диагностика)
         val errText = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(ContextCompat.getColor(context, R.color.mn_fg))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             gravity = Gravity.CENTER
             visibility = View.GONE
             setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -575,7 +540,7 @@ class OverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(6), dp(8), dp(6))
-            setBackgroundColor(Color.parseColor("#4D000000"))
+            setBackgroundColor(ContextCompat.getColor(context, R.color.mn_overlay))
             visibility = View.GONE
         }
         bar.addView(iconButton(R.drawable.ic_close, "Закрыть") { hideWindow() })
@@ -765,7 +730,7 @@ class OverlayService : Service() {
         // который зависит от текущего состояния
         val box = buildSuspendPicker()
         val scroll = android.widget.ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#CC1C1C1E"))
+            setBackgroundColor(ContextCompat.getColor(context, R.color.mn_panel))
             isFillViewport = true
             addView(box)
         }
@@ -802,8 +767,7 @@ class OverlayService : Service() {
     private fun buildSuspendPicker(): LinearLayout {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            setBackgroundColor(Color.parseColor("#CC1C1C1E"))
+            setPadding(dp(6), dp(6), dp(6), dp(6))
         }
         val items = mutableListOf<TextView>()
         for ((min, label) in suspendOptions) {
@@ -812,7 +776,10 @@ class OverlayService : Service() {
             box.addView(item)
         }
         if (suspendActive()) {
-            val item = pickerItem("Снять паузу", Color.parseColor("#FFD166")) {
+            val item = pickerItem(
+                "Снять паузу",
+                ContextCompat.getColor(applicationContext, R.color.mn_warn)
+            ) {
                 cancelSuspend()
             }
             items.add(item)
@@ -832,8 +799,9 @@ class OverlayService : Service() {
         TextView(this).apply {
             text = label
             setTextColor(color)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(dp(12), dp(5), dp(12), dp(5))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTypeface(Design.manrope(context, 600))
+            setPadding(dp(14), dp(8), dp(14), dp(8))
             gravity = Gravity.CENTER
             isFocusable = true
             isFocusableInTouchMode = true
@@ -844,19 +812,22 @@ class OverlayService : Service() {
     private fun highlightPicker() {
         pickerItems.forEachIndexed { i, v ->
             if (i == pickerIndex) {
+                // залитый акцент = mn_accent_strong: белый на mn_accent 3.3:1
                 v.setTextColor(Color.WHITE)
                 v.background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#FF2979FF"))
-                    cornerRadius = dp(8).toFloat()
+                    setColor(ContextCompat.getColor(applicationContext, R.color.mn_accent_strong))
+                    cornerRadius = dp(Design.R_FIELD).toFloat()
+                    setStroke(dp(2), Color.WHITE)
                 }
             } else {
                 v.setTextColor(
                     if (v.text.toString() == "Снять паузу")
-                        Color.parseColor("#FFD166") else Color.parseColor("#FFDDDDDD")
+                        ContextCompat.getColor(applicationContext, R.color.mn_warn)
+                    else ContextCompat.getColor(applicationContext, R.color.mn_fg2)
                 )
                 v.background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#331C1C1E"))
-                    cornerRadius = dp(8).toFloat()
+                    setColor(ContextCompat.getColor(applicationContext, R.color.mn_chip))
+                    cornerRadius = dp(Design.R_FIELD).toFloat()
                 }
             }
         }

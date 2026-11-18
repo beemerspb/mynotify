@@ -1,12 +1,16 @@
 <resources>
+    <!-- Тёмная тема: продукт живёт поверх чужих окон, светлый фон там невозможен.
+         Шрифт задан на уровне темы, чтобы не перебирать каждый TextView;
+         начертание по весу навешивает Design.font() (API 26+). -->
     <style name="Theme.CamOverlay" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/ios_bg</item>
-        <item name="android:statusBarColor">@color/ios_bg</item>
-        <item name="android:navigationBarColor">@color/ios_bg</item>
-        <item name="android:colorBackground">@color/ios_bg</item>
-        <item name="android:textColorPrimary">@color/ios_label</item>
-        <item name="android:textColorSecondary">@color/ios_secondary</item>
-        <item name="android:editTextColor">@color/ios_label</item>
-        <item name="android:textColorHint">@color/ios_secondary</item>
+        <item name="android:windowBackground">@color/mn_bg</item>
+        <item name="android:statusBarColor">@color/mn_bg</item>
+        <item name="android:navigationBarColor">@color/mn_bg</item>
+        <item name="android:colorBackground">@color/mn_bg</item>
+        <item name="android:textColorPrimary">@color/mn_fg</item>
+        <item name="android:textColorSecondary">@color/mn_fg2</item>
+        <item name="android:textColorHint">@color/mn_fg3</item>
+        <item name="android:editTextColor">@color/mn_fg</item>
+        <item name="android:fontFamily">@font/manrope</item>
     </style>
 </resources>

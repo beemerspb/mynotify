@@ -1,0 +1,6 @@
+Шрифты, распространяемые под SIL Open Font License 1.1
+(c) Manrope — Mikhail Sharanda, https://manropefont.com
+(c) JetBrains Mono — JetBrains, https://www.jetbrains.com/mono/
+
+Полный текст OFL 1.1: https://openfonts.dev/licenses/ofl-1.1
+Оба файла — переменные начертания (ось wght), используются через Design.kt.

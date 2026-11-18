@@ -1,15 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Палитра MyNotify: тёмный холодный холст + один синий акцент.
+  Значения перенесены из дизайн-макета (mynotify-interface/css/tokens.css, OKLch)
+  и развёрнуты в sRGB канвасом Chromium, поэтому совпадают с макетом.
+  Акцент — только интерактив. Залитые кнопки идут на mn_accent_strong:
+  белый текст на mn_accent даёт 2.5:1 и с дивана перед ТВ не читается.
+-->
 <resources>
-    <!-- Палитра iOS (light) -->
-    <color name="ios_bg">#F2F2F7</color>
-    <color name="ios_card">#FFFFFF</color>
-    <color name="ios_field">#E9E9EB</color>
-    <color name="ios_label">#1C1C1E</color>
-    <color name="ios_secondary">#6C707E</color>
-    <color name="ios_sep">#E5E5EA</color>
-    <color name="ios_blue">#007AFF</color>
-    <color name="ios_green">#34C759</color>
-    <color name="ios_red">#FF3B30</color>
-    <color name="ios_orange">#FF9500</color>
-    <color name="ios_gray">#8E8E93</color>
+    <!-- Поверхности -->
+    <color name="mn_bg">#06080D</color>
+    <color name="mn_bg2">#0C1016</color>
+    <color name="mn_surface">#13171F</color>
+    <color name="mn_surface2">#1B2129</color>
+    <color name="mn_line">#1AFFFFFF</color>
+    <color name="mn_line_strong">#2EFFFFFF</color>
+    <color name="mn_panel">#EB0C1016</color>
+    <color name="mn_pill">#B30C1016</color>
+    <color name="mn_chip">#4D1B2129</color>
+    <color name="mn_overlay">#8C000000</color>
+
+    <!-- Текст -->
+    <color name="mn_fg">#F3F5F8</color>
+    <color name="mn_fg2">#ACB1B9</color>
+    <color name="mn_fg3">#757B83</color>
+
+    <!-- Акцент: только интерактив -->
+    <color name="mn_accent">#318AF9</color>
+    <color name="mn_accent_strong">#0057C5</color>
+    <color name="mn_accent_press">#0044B1</color>
+    <color name="mn_accent_soft">#29318AF9</color>
+    <color name="mn_accent_line">#8C318AF9</color>
+
+    <!-- Статусы: сигнал, а не второй акцент -->
+    <color name="mn_live">#35CA68</color>
+    <color name="mn_live_soft">#2435CA68</color>
+    <color name="mn_danger">#F64E4D</color>
+    <color name="mn_danger_soft">#24F64E4D</color>
+    <color name="mn_warn">#F4AA2C</color>
+    <color name="mn_warn_soft">#24F4AA2C</color>
 </resources>
