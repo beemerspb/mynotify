@@ -901,15 +901,12 @@ class OverlayService : Service() {
     // ---------- плеер ----------
 
     /**
-     * Если железный AVC-декодер на ТВ занят другим приложением (например,
-     * идёт фильм), его не удаётся инициализировать — плеер падает с
-     * ERROR_CODE_DECODER_INIT_FAILED и окно остаётся чёрным. На многих ТВ
-     * железный AVC-декодер один (concurrent-instances=1), поэтому нужен
-     * запасной путь: media3 умеет откатиться на следующий декодер из списка
-     * (в т.ч. на программный OMX.google.h264.decoder, у него лимита нет).
+     * На ТВ аппаратный видеодекодер обычно один (напр. MiTV: MtkOmxVdec.MM,
+     * preempt:TRUE). Если его взять оверлеем камеры, он ВЫТЕСНЯЕТ декодер
+     * фильма, и то приложение (Кинопоиск) падает. Поэтому окно камеры
+     * всегда декодирует программно (OMX.google.h264.decoder /
+     * c2.android.avc.decoder) — лимита на них нет, чужой декодер не трогаем.
      */
-    private var preferSoftwareDecoder = false
-
     private fun buildPlayer(): ExoPlayer {
         // Буферизация для живого HLS с короткими (0.5 c) сегментами go2rtc:
         // иначе каждый стык сегмента = приседание звука
@@ -920,10 +917,8 @@ class OverlayService : Service() {
         val factory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
             // пробовать следующий декодер, если текущий не инициализировался
             .setEnableDecoderFallback(true)
-        if (preferSoftwareDecoder) {
-            // последний рубеж: софтовый декодер (медленнее, зато всегда есть)
-            factory.setMediaCodecSelector(SoftwareFirstCodecSelector)
-        }
+            // программные декодеры первыми: железный не занимаем
+            .setMediaCodecSelector(SoftwareFirstCodecSelector)
         return ExoPlayer.Builder(this)
             .setRenderersFactory(factory)
             .setLoadControl(load)
@@ -943,6 +938,7 @@ class OverlayService : Service() {
                 requiresSecureDecoder,
                 requiresTunnelingDecoder
             )
+            // программные — первыми; железный остаётся запасным вариантом
             return all.sortedByDescending { it.softwareOnly }
         }
     }
@@ -963,18 +959,6 @@ class OverlayService : Service() {
         }
         ex.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                // Железный AVC-декодер на ТВ один (concurrent-instances=1) и
-                // может быть занят другим приложением (например, фильмом).
-                // Тогда init падает с DECODER_INIT_FAILED. media3 уже пробует
-                // следующий декодер сам; если не помогло — пересобираем плеер
-                // с приоритетом программного декодера (лимита на него нет).
-                if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED &&
-                    !preferSoftwareDecoder
-                ) {
-                    preferSoftwareDecoder = true
-                    handler.post { restartStream(currentUrl()) }
-                    return
-                }
                 handler.post {
                     playerErrText?.visibility = View.VISIBLE
                     playerErrText?.text =
@@ -999,16 +983,6 @@ class OverlayService : Service() {
         ex.playWhenReady = true
         ex.prepare()
         retries = 0
-    }
-
-    /**
-     * Пересобрать плеер (например, после смены приоритета декодеров) и
-     * запустить поток заново.
-     */
-    private fun restartStream(url: String) {
-        try {
-            startStream(url)
-        } catch (_: Exception) {}
     }
 
     /**
